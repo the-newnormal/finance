@@ -35,17 +35,18 @@ export function SetupManager({ divisions, categories, pools }: { divisions: Divi
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <PoolsCard pools={pools} divisions={divisions} />
       <div className="grid content-start gap-6">
-        <NamedListCard title="Divisions" placeholder="New division" items={divisions.map((d) => ({ ...d, active: true }))} add={addDivision} />
-        <NamedListCard title="Claim categories" placeholder="e.g. Venue costs" items={categories} add={addCategory}
+        <NamedListCard title="Divisions" placeholder="New division" maxLength={80} items={divisions.map((d) => ({ ...d, active: true }))} add={addDivision} />
+        <NamedListCard title="Claim categories" placeholder="e.g. Venue costs" maxLength={60} items={categories} add={addCategory}
           toggle={(id, active) => setCategoryActive(id, active)} />
       </div>
     </div>
   );
 }
 
-function NamedListCard({ title, placeholder, items, add, toggle }: {
+function NamedListCard({ title, placeholder, maxLength, items, add, toggle }: {
   title: string;
   placeholder: string;
+  maxLength: number;
   items: { id: string; name: string; active: boolean }[];
   add: (name: string) => Promise<Result>;
   toggle?: (id: string, active: boolean) => Promise<Result>;
@@ -68,7 +69,7 @@ function NamedListCard({ title, placeholder, items, add, toggle }: {
           </div>
         ))}
         <form className="flex gap-2 pt-2" onSubmit={(e) => { e.preventDefault(); run(() => add(name), () => setName("")); }}>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={placeholder} required maxLength={80} />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={placeholder} required maxLength={maxLength} />
           <Button size="sm" className="h-10" disabled={pending}>Add</Button>
         </form>
       </CardContent>

@@ -34,7 +34,7 @@ function AccessFields({ value, onChange, divisions }: { value: Pick<U, "role" | 
             {divisions.map((d) => {
               const on = value.divisionIds.includes(d.id);
               return (
-                <button key={d.id} type="button" onClick={() => onChange({ ...value, divisionIds: on ? value.divisionIds.filter((x) => x !== d.id) : [...value.divisionIds, d.id] })}
+                <button key={d.id} type="button" aria-pressed={on} onClick={() => onChange({ ...value, divisionIds: on ? value.divisionIds.filter((x) => x !== d.id) : [...value.divisionIds, d.id] })}
                   className={`rounded-full border px-3 py-1 text-xs ${on ? "border-brand-deep bg-teal/40" : "border-line hover:bg-canvas"}`}>
                   {d.name}
                 </button>

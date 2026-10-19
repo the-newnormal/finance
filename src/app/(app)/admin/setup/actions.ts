@@ -25,7 +25,7 @@ function done(error: { code?: string; message?: string } | null, what: string): 
 export async function addDivision(input: string): Promise<Result> {
   await requireAdmin();
   const v = name(80).safeParse(input);
-  if (!v.success) return { ok: false, error: "Enter a name." };
+  if (!v.success) return { ok: false, error: "Enter a name of up to 80 characters." };
   const supabase = await createClient();
   return done((await supabase.from("divisions").insert({ name: v.data })).error, "division");
 }
@@ -33,7 +33,7 @@ export async function addDivision(input: string): Promise<Result> {
 export async function addCategory(input: string): Promise<Result> {
   await requireAdmin();
   const v = name(60).safeParse(input);
-  if (!v.success) return { ok: false, error: "Enter a name." };
+  if (!v.success) return { ok: false, error: "Enter a name of up to 60 characters." };
   const supabase = await createClient();
   return done((await supabase.from("categories").insert({ name: v.data })).error, "category");
 }
