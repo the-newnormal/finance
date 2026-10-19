@@ -71,9 +71,9 @@ reset role;
 
 -- ---------- a volunteer claims; the core member reviews ----------
 select pg_temp.login('00000000-0000-4000-8000-0000000b0b01');
-insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths, payout_type, payout_masked, payout_enc)
+insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths, payout_type, payout_masked, payout_enc, submission_id)
 values ('20000000-0000-4000-8000-0000000b0e01', '30000000-0000-4000-8000-0000000b0001', 'bank taxi', 4200,
-        array['00000000-0000-4000-8000-0000000b0b01/x/r.jpg'], 'paynow_mobile', 'Mobile •••• 4567', 'v1.a.b.c');
+        array['00000000-0000-4000-8000-0000000b0b01/x/r.jpg'], 'paynow_mobile', 'Mobile •••• 4567', 'v1.a.b.c', gen_random_uuid());
 select is_empty($$ select * from public.bank_accounts $$, 'volunteers see no bank accounts');
 select is_empty($$ select * from public.bank_balances $$, 'or balances');
 select throws_ok($$ select public.record_bank_entry(null, 'grant', 1, null, 'nope') $$, '42501', null, 'or record anything');
