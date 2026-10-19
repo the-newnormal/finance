@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeNextPath } from "@/lib/auth/safe-next";
 import { supabaseEnv } from "./env";
 
 const PROTECTED_PREFIXES = ["/claims", "/review", "/budgets", "/payouts", "/admin"];
@@ -55,11 +56,9 @@ export async function updateSession(request: NextRequest) {
     return redirectTo(login);
   }
 
+  // Already signed in: go where the login link was taking them (same-site paths only).
   if (signedIn && pathname === "/login") {
-    const portal = request.nextUrl.clone();
-    portal.pathname = "/claims";
-    portal.search = "";
-    return redirectTo(portal);
+    return redirectTo(new URL(safeNextPath(request.nextUrl.searchParams.get("next")), request.nextUrl.origin));
   }
 
   return response;

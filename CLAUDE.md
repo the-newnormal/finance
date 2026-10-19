@@ -31,7 +31,7 @@ A claim moves `pending_review` → `pending_finance` → `approved` → `paid`, 
 
 ## Database
 - Never modify the production schema by hand. **All schema changes are migrations in `supabase/migrations/`.**
-- **RLS ON for every table** (CI fails otherwise: `scripts/check-migrations.sh`). The database decides who sees and does what; app code never re-implements a rule it could get wrong. Helpers in the `private` schema (`private.is_finance()`, `private.in_purview(division)`, …) are the single definition of each rule.
+- **RLS ON for every table** (CI's `migrations` job fails otherwise: `scripts/check-migrations.sh`, required on `main`). The database decides who sees and does what; app code never re-implements a rule it could get wrong. Helpers in the `private` schema (`private.is_finance()`, `private.in_purview(division)`, …) are the single definition of each rule.
 - Claims are inserted by their claimant (RLS) and a trigger fills everything the claimant must not choose (status, division, names, timestamps). Status only changes through the `review_claim`, `finance_decide` and `mark_paid` functions, which check the caller themselves; there is no update policy on `claims`.
 - Budget totals are **computed** from claims (`pool_totals` view), never stored.
 - Budget amounts (`pool_budgets`) are visible only to core members of the division, Finance and admins; volunteers see pool names only.
