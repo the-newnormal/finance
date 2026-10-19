@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,12 @@ export default async function PayoutsPage() {
       <PageHeader
         title="Payouts"
         description="Approved claims waiting to be paid. Open one for its PayNow QR code, pay it, then record the bank reference."
-        action={<Button asChild variant="outline"><a href="/api/export">Export claims (CSV)</a></Button>}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline"><Link href="/payouts/import">Import paid claims</Link></Button>
+            <Button asChild variant="outline"><a href="/api/export">Export claims (CSV)</a></Button>
+          </div>
+        }
       />
       <div className="grid gap-6">
         <Card>

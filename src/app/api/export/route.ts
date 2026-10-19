@@ -37,7 +37,7 @@ export async function GET() {
     ["id", "submitted", "kind", "status", "claimant", "budget", "category", "purchase_date", "vendor", "due_date", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
     ...claims.map((c) => [
       c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, budget.get(c.budget_id) ?? "", cat.get(c.category_id) ?? "",
-      c.expense_date ?? "", c.vendor_name ?? "", c.due_date ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type, paidOn.get(c.id) ?? "", c.payment_reference ?? "",
+      c.expense_date ?? "", c.vendor_name ?? "", c.due_date ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type ?? "", paidOn.get(c.id) ?? "", c.payment_reference ?? "",
     ]),
   ];
   const csv = rows.map((r) => r.map((v) => csvCell(String(v))).join(",")).join("\r\n");

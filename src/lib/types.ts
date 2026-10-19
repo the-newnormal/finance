@@ -72,17 +72,20 @@ export interface Claim {
   vendor_name: string | null;
   due_date: string | null;
   attachment_paths: string[];
-  payout_type: PayoutType;
-  payout_masked: string;
+  /** null only on imported claims, which were paid before this app. */
+  payout_type: PayoutType | null;
+  payout_masked: string | null;
   rejection_reason: string | null;
   payment_reference: string | null;
+  /** Paid before this app existed and imported by Finance (0005). */
+  imported: boolean;
   created_at: string;
   updated_at: string;
 }
 
 /** Every claims column the Data API may read (payout_enc is never granted). */
 export const CLAIM_COLUMNS =
-  "id, kind, status, claimant_id, claimant_name, division_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type, payout_masked, rejection_reason, payment_reference, created_at, updated_at";
+  "id, kind, status, claimant_id, claimant_name, division_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type, payout_masked, rejection_reason, payment_reference, imported, created_at, updated_at";
 
 export interface ClaimEvent {
   id: number;

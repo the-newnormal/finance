@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Paperclip } from "lucide-react";
 import { useState, useTransition } from "react";
-import { decideClaim, markPaid } from "./actions";
+import { createClient } from "@/lib/supabase/client";
+import { attachClaimFiles, decideClaim, markPaid } from "./actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
@@ -79,5 +81,55 @@ export function MarkPaidForm({ claimId, accounts }: {
       </Field>
       <Button type="submit" disabled={pending || !accounts.length}>{pending ? "Saving…" : "Mark as paid"}</Button>
     </form>
+  );
+}
+
+// The types the receipts bucket accepts (supabase/migrations/0003_claims.sql).
+const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
+
+/** Finance adds receipts to an imported claim: uploaded to their own folder, then attached. */
+export function AttachFiles({ claimId, uid, room }: { claimId: string; uid: string; room: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function add(list: FileList | null) {
+    const files = Array.from(list ?? []);
+    if (!files.length) return;
+    setError(null);
+    if (files.length > room) return setError(`You can add ${room} more file${room === 1 ? "" : "s"}.`);
+    const bad = files.find((f) => !ACCEPTED.includes(f.type) || f.size > 10 * 1024 * 1024);
+    if (bad) return setError(`${bad.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF under 10 MB.`);
+    setBusy(true);
+    try {
+      const storage = createClient().storage.from("receipts");
+      const folder = `${uid}/${crypto.randomUUID()}`;
+      const paths: string[] = [];
+      for (const f of files) {
+        const safe = f.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
+        const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
+        const { error } = await storage.upload(path, f, { contentType: f.type, upsert: false });
+        if (error) throw error;
+        paths.push(path);
+      }
+      const res = await attachClaimFiles(claimId, paths);
+      if (!res.ok) setError(res.error);
+      else router.refresh();
+    } catch {
+      setError("A file couldn't be uploaded. Check your connection and try again.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="grid gap-2 sm:col-span-2">
+      {error && <Alert>{error}</Alert>}
+      <label aria-disabled={busy} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-ink/25 bg-canvas/60 px-4 py-4 text-sm hover:bg-canvas aria-disabled:pointer-events-none aria-disabled:opacity-50">
+        <Paperclip className="size-4 text-brand-deep" />
+        <span className="font-medium">{busy ? "Uploading…" : "Add receipts"}</span>
+        <input type="file" multiple accept={ACCEPTED.join(",")} className="sr-only" disabled={busy}
+          onChange={(e) => { void add(e.target.files); e.target.value = ""; }} />
+      </label>
+    </div>
   );
 }
