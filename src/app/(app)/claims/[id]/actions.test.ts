@@ -12,7 +12,7 @@ vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
 const ID = "40000000-0000-4000-8000-000000000001";
 const ACCOUNT = "50000000-0000-4000-8000-000000000001";
-const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_name: "Vol One", amount_cents: 2500, pool_name: "Iftar" };
+const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_name: "Vol One", amount_cents: 2500, budget_name: "Iftar" };
 const rpc = vi.fn();
 
 function returns(result: { data?: unknown; error?: unknown }) {

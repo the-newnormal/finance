@@ -13,15 +13,15 @@ export default async function ReviewPage() {
   const finance = isFinance(me);
   const supabase = await createClient();
 
-  // RLS limits both lists to claims this person has purview over. Their own claims are left out
-  // (nobody reviews their own; Finance members may finalise theirs, so those stay for them).
+  // RLS limits both lists to claims this person has purview over. Their own claims are left out of
+  // division review (nobody reviews their own); Finance may finalise its own, so those stay.
   const pending = (status: string) =>
     fetchAll((from, to) =>
       supabase.from("claims").select(`${ROW_COLUMNS}, claimant_id`).eq("status", status).order("created_at").order("id").range(from, to),
     );
   const [review, final] = await Promise.all([pending("pending_review"), finance ? pending("pending_finance") : []]);
   const reviewQueue = await withNames(review.filter((c) => c.claimant_id !== me.id));
-  const financeQueue = await withNames(final.filter((c) => c.claimant_id !== me.id || me.finance));
+  const financeQueue = await withNames(final);
 
   return (
     <>
@@ -31,7 +31,7 @@ export default async function ReviewPage() {
           <Card>
             <CardHeader>
               <CardTitle>Final approval · Finance</CardTitle>
-              <CardDescription>Reviewed volunteer claims, and claims from core personnel.</CardDescription>
+              <CardDescription>Reviewed volunteer claims, and claims from division leads and Finance.</CardDescription>
             </CardHeader>
             <CardContent><ClaimsTable claims={financeQueue} showClaimant empty="Nothing waiting for Finance." /></CardContent>
           </Card>

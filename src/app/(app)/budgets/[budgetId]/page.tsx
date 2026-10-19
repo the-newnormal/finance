@@ -6,7 +6,6 @@ import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
-import { fetchAll as fetchAllRows } from "@/lib/fetch-all";
 import { formatSGD } from "@/lib/money";
 import { requireReviewer } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -21,7 +20,7 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
   if (!budget) notFound();
 
   const [guidelines, claims] = await Promise.all([
-    fetchAllRows<GuidelineTotals>((from, to) =>
+    fetchAll<GuidelineTotals>((from, to) =>
       supabase.from("guideline_totals").select("*").eq("budget_id", budgetId).order("category_id").range(from, to)),
     fetchAll((from, to) =>
       supabase.from("claims").select(ROW_COLUMNS).eq("budget_id", budgetId).order("created_at").order("id").range(from, to),

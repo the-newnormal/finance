@@ -17,7 +17,7 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
   const rawPage = one(params.page) ?? "0";
   const page = /^\d{1,6}$/.test(rawPage) ? Number(rawPage) : 0;
   const supabase = await createClient();
-  // RLS: Finance and admins only; the page guard above is just for navigation.
+  // RLS: Finance only; the page guard above is just for navigation.
   const { data: accounts, error } = await supabase
     .from("bank_balances")
     .select("account_id, name, bank, last4, active, balance_cents, last_entry_date")
@@ -38,7 +38,7 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
     <>
       <PageHeader
         title="Bank"
-        description="Expected balances from everything recorded here. Compare them with DBS iBanking; record any difference as an adjustment. Only Finance and admins can see this page."
+        description="Expected balances from everything recorded here. Compare them with DBS iBanking; record any difference as an adjustment. Only Finance can see this page."
       />
       <BankManager
         accounts={(accounts ?? []).map((a) => ({ ...a, balance_cents: Number(a.balance_cents) }) as Account)}

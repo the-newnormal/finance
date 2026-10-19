@@ -38,7 +38,7 @@ export async function sendMagicLink(
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      // Invite-only: admins create accounts on the People page; sign-ups are off.
+      // Invite-only: Finance creates accounts on the People page; sign-ups are off.
       shouldCreateUser: false,
       emailRedirectTo: confirm.toString(),
     },

@@ -11,7 +11,7 @@ import type { ClaimStatus } from "@/lib/types";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-type Outcome = { claimant_id: string; claimant_name: string; amount_cents: number; pool_name: string; status: ClaimStatus };
+type Outcome = { claimant_id: string; claimant_name: string; amount_cents: number; budget_name: string; status: ClaimStatus };
 
 const uuid = z.uuid();
 
@@ -39,12 +39,12 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
   if (data.status === "approved") {
     after(() => emailClaimant(data.claimant_id, `Your claim for ${amount} has been approved`, [
       `Hi ${first},`,
-      `Your claim of ${amount} for ${data.pool_name} has been approved by Finance. You'll be paid shortly.`,
+      `Your claim of ${amount} for ${data.budget_name} has been approved by Finance. You'll be paid shortly.`,
     ], { href: `/claims/${id}`, label: "View claim" }));
   } else if (data.status === "rejected") {
     after(() => emailClaimant(data.claimant_id, `Your claim for ${amount} needs attention`, [
       `Hi ${first},`,
-      `Your claim for ${data.pool_name} was not approved.`,
+      `Your claim for ${data.budget_name} was not approved.`,
       `Reason: ${reason?.trim()}`,
       "You're welcome to submit a new claim with the corrections.",
     ], { href: `/claims/${id}`, label: "View claim" }));
@@ -69,7 +69,7 @@ export async function markPaid(id: string, reference: string, accountId: string)
 
   after(() => emailClaimant(data.claimant_id, `You've been paid ${formatSGD(data.amount_cents)}`, [
     `Hi ${data.claimant_name.split(" ")[0]},`,
-    `We've sent ${formatSGD(data.amount_cents)} for your ${data.pool_name} claim. Thank you for everything you do for New Normal!`,
+    `We've sent ${formatSGD(data.amount_cents)} for your ${data.budget_name} claim. Thank you for everything you do for New Normal!`,
   ]));
 
   revalidatePath(`/claims/${id}`);

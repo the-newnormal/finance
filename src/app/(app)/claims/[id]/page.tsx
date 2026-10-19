@@ -34,20 +34,21 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   if (error) throw new Error(`claim read failed: ${error.code}`); // an outage, not a missing claim
   if (!claim) notFound();
 
-  const [pool, category, events, files] = await Promise.all([
-    supabase.from("pools").select("name").eq("id", claim.pool_id).maybeSingle(),
+  const [budget, category, events, files] = await Promise.all([
+    supabase.from("budgets").select("name").eq("id", claim.budget_id).maybeSingle(),
     supabase.from("categories").select("name").eq("id", claim.category_id).maybeSingle(),
     supabase.from("claim_events").select("id, action, actor_name, note, at").eq("claim_id", claim.id).order("at").order("id"),
     // Signed as the viewer, so storage RLS decides; links last ten minutes.
     supabase.storage.from("receipts").createSignedUrls(claim.attachment_paths, 600),
   ]);
-  for (const r of [pool, category, events, files]) if (r.error) throw new Error(`claim page read failed`);
+  for (const r of [budget, category, events, files]) if (r.error) throw new Error(`claim page read failed`);
   const ref = `NN-${claim.id.slice(0, 8).toUpperCase()}`;
-  const { data: myDivisions, error: divisionsError } = await supabase.from("division_members").select("division_id").eq("member_id", me.id);
+  // The divisions this viewer leads (RLS: their own rows only).
+  const { data: myDivisions, error: divisionsError } = await supabase.from("division_leads").select("division_id").eq("member_id", me.id);
   if (divisionsError) throw new Error(`divisions read failed: ${divisionsError.code}`);
   const may = permissions(me, claim, (myDivisions ?? []).map((d) => d.division_id as string));
   const payout = may.seePayout ? await payoutPanel(supabase, claim, ref) : null;
-  // Finance and admins only (RLS on bank_balances); everyone else gets none.
+  // Finance only (RLS on bank_balances); everyone else gets none.
   const { data: accounts, error: accountsError } = may.markPaid
     ? await supabase.from("bank_balances").select("account_id, name, last4, balance_cents").eq("active", true).order("name")
     : { data: [], error: null };
@@ -76,7 +77,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
             </CardHeader>
             <CardContent>
               <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
-                <Item label="Budget">{pool.data?.name ?? "—"}</Item>
+                <Item label="Budget">{budget.data?.name ?? "—"}</Item>
                 <Item label="Category">{category.data?.name ?? "—"}</Item>
                 <Item label="Submitted by">{claim.claimant_name}</Item>
                 <Item label="Submitted">{formatDate(claim.created_at)}</Item>
@@ -202,12 +203,13 @@ function Item({ label, children, className }: { label: string; children: React.R
 }
 
 // What to offer this viewer. Display only: decide_claim, mark_paid and claim_payout_enc check again.
-function permissions(me: Member, c: Claim, myDivisions: string[]) {
+// Nobody reviews their own claim; only Finance finalises (its own included).
+function permissions(me: Member, c: Claim, ledDivisions: string[]) {
   const own = c.claimant_id === me.id;
   const reviews =
     c.status === "pending_review" && !own &&
-    (isFinance(me) || (me.role !== "volunteer" && myDivisions.includes(c.division_id)));
-  const finalises = c.status === "pending_finance" && isFinance(me) && (!own || me.finance);
+    (isFinance(me) || (me.role === "lead" && ledDivisions.includes(c.division_id)));
+  const finalises = c.status === "pending_finance" && isFinance(me);
   return {
     decide: reviews || finalises,
     seePayout: isFinance(me) && (c.status === "pending_finance" || c.status === "approved"),

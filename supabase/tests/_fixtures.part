@@ -1,0 +1,87 @@
+-- ---------- helpers ----------
+create function pg_temp.login(p_user uuid) returns void language plpgsql as $$
+begin
+  perform set_config('role', 'authenticated', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_user, 'role', 'authenticated')::text, true);
+end $$;
+
+-- Looks a claim up as the database owner, whoever is signed in, so a refusal really reaches the
+-- function instead of being handed a null id.
+create function pg_temp.claim(p_description text) returns uuid language sql security definer as $$
+  select id from public.claims where description = p_description
+$$;
+
+-- Submits a claim as whoever is signed in, attaching their uploaded receipt <uid>/t/r.jpg.
+create function pg_temp.submit(p_budget uuid, p_category uuid, p_description text, p_amount bigint,
+  p_kind public.claim_kind default 'reimbursement', p_vendor text default null)
+returns void language sql as $$
+  insert into public.claims (kind, budget_id, category_id, description, amount_cents, vendor_name,
+                             attachment_paths, payout_type, payout_masked, payout_enc, submission_id)
+  values (p_kind, p_budget, p_category, p_description, p_amount, p_vendor,
+          array[auth.uid()::text || '/t/r.jpg'], 'paynow_mobile', 'Mobile •••• 4567', 'v1.a.b.c', gen_random_uuid())
+$$;
+
+-- ---------- fixtures (as the database owner; names start with "T " to stay clear of seed.sql) ----------
+-- Volunteers v1 (0a..01), v2 (0a..02); leads l1 (0b..01, leads D1), l2 (0b..02, leads D2);
+-- Finance f1 (0c..01), f2 (0c..02). Budgets: B1 (D1: K1, K2), B2 (D2: K1), B3 (D1: K1, closed).
+-- K3 is active but provisioned by no budget.
+insert into auth.users (id, email) values
+  ('0a000000-0000-4000-8000-000000000001', 't-v1@test.local'),
+  ('0a000000-0000-4000-8000-000000000002', 't-v2@test.local'),
+  ('0b000000-0000-4000-8000-000000000001', 't-l1@test.local'),
+  ('0b000000-0000-4000-8000-000000000002', 't-l2@test.local'),
+  ('0c000000-0000-4000-8000-000000000001', 't-f1@test.local'),
+  ('0c000000-0000-4000-8000-000000000002', 't-f2@test.local'),
+  ('0a000000-0000-4000-8000-000000000099', 't-new@test.local');
+
+insert into public.members (id, email, name, role) values
+  ('0a000000-0000-4000-8000-000000000001', 't-v1@test.local', 'T Vol One', 'volunteer'),
+  ('0a000000-0000-4000-8000-000000000002', 't-v2@test.local', 'T Vol Two', 'volunteer'),
+  ('0b000000-0000-4000-8000-000000000001', 't-l1@test.local', 'T Lead One', 'lead'),
+  ('0b000000-0000-4000-8000-000000000002', 't-l2@test.local', 'T Lead Two', 'lead'),
+  ('0c000000-0000-4000-8000-000000000001', 't-f1@test.local', 'T Fin One', 'finance'),
+  ('0c000000-0000-4000-8000-000000000002', 't-f2@test.local', 'T Fin Two', 'finance');
+
+insert into public.divisions (id, name) values
+  ('0d000000-0000-4000-8000-000000000001', 'T Division One'),
+  ('0d000000-0000-4000-8000-000000000002', 'T Division Two');
+
+insert into public.division_leads (member_id, division_id) values
+  ('0b000000-0000-4000-8000-000000000001', '0d000000-0000-4000-8000-000000000001'),
+  ('0b000000-0000-4000-8000-000000000002', '0d000000-0000-4000-8000-000000000002');
+
+insert into public.categories (id, name) values
+  ('0f000000-0000-4000-8000-000000000001', 'T Transport'),
+  ('0f000000-0000-4000-8000-000000000002', 'T Food'),
+  ('0f000000-0000-4000-8000-000000000003', 'T Venue');
+
+insert into public.budgets (id, name, kind, division_id, active) values
+  ('0e000000-0000-4000-8000-000000000001', 'T Budget One', 'event', '0d000000-0000-4000-8000-000000000001', true),
+  ('0e000000-0000-4000-8000-000000000002', 'T Budget Two', 'general', '0d000000-0000-4000-8000-000000000002', true),
+  ('0e000000-0000-4000-8000-000000000003', 'T Budget Closed', 'event', '0d000000-0000-4000-8000-000000000001', false);
+
+insert into public.budget_categories (budget_id, category_id) values
+  ('0e000000-0000-4000-8000-000000000001', '0f000000-0000-4000-8000-000000000001'),
+  ('0e000000-0000-4000-8000-000000000001', '0f000000-0000-4000-8000-000000000002'),
+  ('0e000000-0000-4000-8000-000000000002', '0f000000-0000-4000-8000-000000000001'),
+  ('0e000000-0000-4000-8000-000000000003', '0f000000-0000-4000-8000-000000000001');
+
+insert into public.budget_guidelines (budget_id, category_id, guideline_cents) values
+  ('0e000000-0000-4000-8000-000000000001', '0f000000-0000-4000-8000-000000000001', 100000),
+  ('0e000000-0000-4000-8000-000000000001', '0f000000-0000-4000-8000-000000000002', 50000),
+  ('0e000000-0000-4000-8000-000000000002', '0f000000-0000-4000-8000-000000000001', 20000),
+  ('0e000000-0000-4000-8000-000000000003', '0f000000-0000-4000-8000-000000000001', 10000);
+
+insert into public.bank_accounts (id, name, last4, active) values
+  ('aa000000-0000-4000-8000-000000000001', 'T Joint A', '1234', true),
+  ('aa000000-0000-4000-8000-000000000002', 'T Closed B', '5678', false);
+
+-- The receipt each member's claims attach (claims refuse files that weren't uploaded).
+insert into storage.objects (bucket_id, name) values
+  ('receipts', '0a000000-0000-4000-8000-000000000001/t/r.jpg'),
+  ('receipts', '0a000000-0000-4000-8000-000000000002/t/r.jpg'),
+  ('receipts', '0b000000-0000-4000-8000-000000000001/t/r.jpg'),
+  ('receipts', '0b000000-0000-4000-8000-000000000002/t/r.jpg'),
+  ('receipts', '0c000000-0000-4000-8000-000000000001/t/r.jpg'),
+  ('receipts', '0c000000-0000-4000-8000-000000000002/t/r.jpg');
