@@ -61,6 +61,14 @@ insert into public.categories (id, name, active) values
   ('30000000-0000-4000-8000-000000000001', 'RLS Transport', true),
   ('30000000-0000-4000-8000-000000000002', 'RLS Hidden', false);
 
+-- The receipts each claim below attaches (claims refuse files that weren't uploaded).
+insert into storage.objects (bucket_id, name) values
+  ('receipts', '00000000-0000-4000-8000-000000000b01/a/r.jpg'),
+  ('receipts', '00000000-0000-4000-8000-000000000b02/b/r.jpg'),
+  ('receipts', '00000000-0000-4000-8000-000000000c01/c/i.pdf'),
+  ('receipts', '00000000-0000-4000-8000-000000000f01/d/r.jpg'),
+  ('receipts', '00000000-0000-4000-8000-000000000a01/e/r.jpg');
+
 -- ---------- signed out ----------
 set local role anon;
 set local request.jwt.claims to '{"role": "anon"}';
@@ -111,6 +119,13 @@ select throws_ok($$
           array['00000000-0000-4000-8000-000000000b02/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
 $$, '42501', 'Invalid attachment.', 'claims cannot attach someone else''s files');
 
+select throws_ok($$
+  insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
+                             payout_type, payout_masked, payout_enc)
+  values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 no file', 100,
+          array['00000000-0000-4000-8000-000000000b01/never/uploaded.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+$$, 'P0001', 'Upload the receipt first.', 'claims refuse receipts that were never uploaded');
+
 select throws_ok($$ select payout_enc from public.claims $$, '42501', null,
   'payout_enc is not readable through the Data API');
 select throws_ok($$ update public.claims set status = 'paid' $$, '42501', null,
@@ -127,6 +142,8 @@ select is_empty($$ select * from public.pool_totals $$, 'volunteers see no budge
 select results_eq($$ select count(*)::int from public.pools where name like 'RLS %' $$, $$ values (3) $$, 'volunteers see pool names');
 select results_eq($$ select count(*)::int from public.members $$, $$ values (1) $$, 'volunteers see only themselves');
 
+select throws_ok($$ select public.admin_update_member('00000000-0000-4000-8000-000000000b01', 'admin', true, true, '{}') $$,
+  'P0002', null, 'non-admins cannot use the admin functions (RLS hides the row)');
 update public.members set role = 'admin' where id = '00000000-0000-4000-8000-000000000b01';
 reset role;
 select results_eq($$ select role::text from public.members where id = '00000000-0000-4000-8000-000000000b01' $$,
@@ -154,6 +171,8 @@ select throws_ok($$ select * from public.claim_payout_enc(pg_temp.claim('v1 taxi
   'core members cannot read payout details');
 select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v2 food'), true) $$, 'P0002', null,
   'core members cannot decide another division''s claims');
+select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v1 taxi'), null, null) $$, 'P0001',
+  'Choose approve or reject.', 'a decision must be approve or reject');
 select lives_ok($$ select * from public.decide_claim(pg_temp.claim('v1 taxi'), true) $$,
   'a core member of the division approves a volunteer''s claim');
 select results_eq($$ select status::text from public.claims where description = 'v1 taxi' $$,
@@ -196,6 +215,8 @@ select throws_ok($$ select * from public.mark_paid(pg_temp.claim('v1 taxi'), 'x'
   'Enter the bank transaction reference.', 'paying needs a reference');
 select results_eq($$ select claimant_email, status::text from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-123') $$,
   $$ values ('v1@test.local', 'paid') $$, 'Finance marks it paid and gets the claimant''s e-mail');
+select results_eq($$ select allocated_cents from public.pool_totals where pool_id = '20000000-0000-4000-8000-000000000e03' $$,
+  $$ values (0::bigint) $$, 'a budget with no amount yet still shows in the totals');
 select results_eq($$ select allocated_cents, pending_cents, approved_cents, paid_cents from public.pool_totals
                      where pool_id = '20000000-0000-4000-8000-000000000e01' $$,
   $$ values (100000::bigint, 30000::bigint, 0::bigint, 2500::bigint) $$, 'budget totals are computed from claims');
@@ -221,7 +242,20 @@ select throws_ok($$ select * from public.decide_claim(pg_temp.claim('adm stamps'
   'admins without the finance flag cannot approve their own claims');
 select throws_ok($$ update public.members set role = 'volunteer' where id = '00000000-0000-4000-8000-000000000a01' $$,
   '42501', 'You can''t change your own access.', 'admins cannot change their own access');
-select lives_ok($$ update public.members set active = false where id = '00000000-0000-4000-8000-000000000b02' $$,
+select throws_ok($$ update public.pools set division_id = '10000000-0000-4000-8000-000000000d02'
+                    where id = '20000000-0000-4000-8000-000000000e01' $$, 'P0001', null,
+  'a budget with claims cannot move to another division');
+select lives_ok($$ update public.pools set division_id = '10000000-0000-4000-8000-000000000d02'
+                   where id = '20000000-0000-4000-8000-000000000e03' $$, 'a budget without claims can move');
+select throws_ok($$ select public.admin_update_member('00000000-0000-4000-8000-000000000c01', 'core', false, true,
+                    array['10000000-0000-4000-8000-000000000d02', '99999999-0000-4000-8000-000000000000']::uuid[]) $$,
+  '23503', null, 'an unknown division fails the whole update');
+select results_eq($$ select division_id::text from public.division_members where member_id = '00000000-0000-4000-8000-000000000c01' $$,
+  $$ values ('10000000-0000-4000-8000-000000000d01') $$, 'so nothing changed: divisions stay as they were');
+select lives_ok($$ select public.admin_update_member('00000000-0000-4000-8000-000000000c01', 'core', false, true,
+                   array['10000000-0000-4000-8000-000000000d01', '10000000-0000-4000-8000-000000000d01']::uuid[]) $$,
+  'duplicate divisions are saved once');
+select lives_ok($$ select public.admin_update_member('00000000-0000-4000-8000-000000000b02', 'volunteer', false, false, '{}') $$,
   'admins deactivate members');
 reset role;
 
@@ -229,6 +263,7 @@ reset role;
 select pg_temp.login('00000000-0000-4000-8000-000000000b02');
 select is_empty($$ select id from public.claims $$, 'deactivated members see no claims');
 select is_empty($$ select * from public.pools $$, 'deactivated members see no pools');
+select is_empty($$ select * from public.members $$, 'deactivated members no longer read even their own row');
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
                              payout_type, payout_masked, payout_enc)
@@ -239,7 +274,7 @@ reset role;
 
 -- ---------- receipts storage ----------
 select pg_temp.login('00000000-0000-4000-8000-000000000b01');
-select lives_ok($$ insert into storage.objects (bucket_id, name) values ('receipts', '00000000-0000-4000-8000-000000000b01/a/r.jpg') $$,
+select lives_ok($$ insert into storage.objects (bucket_id, name) values ('receipts', '00000000-0000-4000-8000-000000000b01/z/new.jpg') $$,
   'members upload into their own folder');
 select throws_ok($$ insert into storage.objects (bucket_id, name) values ('receipts', '00000000-0000-4000-8000-000000000b02/x/r.jpg') $$,
   '42501', null, 'members cannot upload into someone else''s folder');
@@ -248,12 +283,14 @@ select results_eq($$ select action from public.claim_events where claim_id = pg_
 reset role;
 
 select pg_temp.login('00000000-0000-4000-8000-000000000c01');
-select results_eq($$ select count(*)::int from storage.objects where bucket_id = 'receipts' $$, $$ values (1) $$,
-  'reviewers read the receipts of claims they can see');
+select results_eq($$ select name from storage.objects where bucket_id = 'receipts' order by name $$,
+  $$ values ('00000000-0000-4000-8000-000000000a01/e/r.jpg'), ('00000000-0000-4000-8000-000000000b01/a/r.jpg'),
+            ('00000000-0000-4000-8000-000000000c01/c/i.pdf') $$,
+  'reviewers read their own files and the receipts of claims they can see, nothing else');
 reset role;
 
 select pg_temp.login('00000000-0000-4000-8000-000000000c02');
-select is_empty($$ select * from storage.objects where bucket_id = 'receipts' $$,
+select is_empty($$ select * from storage.objects where name = '00000000-0000-4000-8000-000000000b01/a/r.jpg' $$,
   'other divisions cannot read those receipts');
 reset role;
 
