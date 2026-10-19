@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { sendEmail } from "@/lib/email";
+import { emailClaimant } from "@/lib/notify";
 import { formatSGD } from "@/lib/money";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -11,7 +11,7 @@ import type { ClaimStatus } from "@/lib/types";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-type Outcome = { claimant_email: string; claimant_name: string; amount_cents: number; pool_name: string; status: ClaimStatus };
+type Outcome = { claimant_id: string; claimant_name: string; amount_cents: number; pool_name: string; status: ClaimStatus };
 
 const uuid = z.uuid();
 
@@ -37,12 +37,12 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
   // The decision is saved; the email goes out after the response, so a slow mail server never
   // holds up (or seems to fail) the approval.
   if (data.status === "approved") {
-    after(() => sendEmail(data.claimant_email, `Your claim for ${amount} has been approved`, [
+    after(() => emailClaimant(data.claimant_id, `Your claim for ${amount} has been approved`, [
       `Hi ${first},`,
       `Your claim of ${amount} for ${data.pool_name} has been approved by Finance. You'll be paid shortly.`,
     ], { href: `/claims/${id}`, label: "View claim" }));
   } else if (data.status === "rejected") {
-    after(() => sendEmail(data.claimant_email, `Your claim for ${amount} needs attention`, [
+    after(() => emailClaimant(data.claimant_id, `Your claim for ${amount} needs attention`, [
       `Hi ${first},`,
       `Your claim for ${data.pool_name} was not approved.`,
       `Reason: ${reason?.trim()}`,
@@ -62,7 +62,7 @@ export async function markPaid(id: string, reference: string): Promise<ActionRes
   const { data, error } = await supabase.rpc("mark_paid", { p_claim: id, p_reference: reference }).single<Outcome>();
   if (error) return refusal(error);
 
-  after(() => sendEmail(data.claimant_email, `You've been paid ${formatSGD(data.amount_cents)}`, [
+  after(() => emailClaimant(data.claimant_id, `You've been paid ${formatSGD(data.amount_cents)}`, [
     `Hi ${data.claimant_name.split(" ")[0]},`,
     `We've sent ${formatSGD(data.amount_cents)} for your ${data.pool_name} claim. Thank you for everything you do for New Normal!`,
   ]));

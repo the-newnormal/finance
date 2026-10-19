@@ -4,7 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 // THE ONLY SERVICE-ROLE CLIENT. It bypasses RLS entirely, so only the files listed in
 // admin-imports.test.ts may import it, which fails if anything else does:
 // - the People page's actions (src/app/(app)/admin/people/actions.ts), which invite a login, and
-//   deactivate or reactivate one, each after checking, as the signed-in admin, that it may.
+//   deactivate or reactivate one, each after checking, as the signed-in admin, that it may;
+// - src/lib/notify.ts, which reads one claimant's email to tell them about a decision the database
+//   already made and checked as the signed-in user (decide_claim/mark_paid never return addresses).
 // Everything else reads and writes as the signed-in user (./server.ts) so RLS decides.
 //
 // `server-only` makes a build fail if a Client Component ever imports it, and the key has no

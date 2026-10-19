@@ -1,17 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sendEmail } from "@/lib/email";
+import { emailClaimant as sendEmail } from "@/lib/notify";
 import { createClient } from "@/lib/supabase/server";
 import { decideClaim, markPaid } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: "me" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/email", () => ({ sendEmail: vi.fn() }));
+vi.mock("@/lib/notify", () => ({ emailClaimant: vi.fn() }));
 // after() schedules work for once the response is sent; here, run it straight away.
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
 const ID = "40000000-0000-4000-8000-000000000001";
-const outcome = { claimant_email: "v@test.local", claimant_name: "Vol One", amount_cents: 2500, pool_name: "Iftar" };
+const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_name: "Vol One", amount_cents: 2500, pool_name: "Iftar" };
 const rpc = vi.fn();
 
 function returns(result: { data?: unknown; error?: unknown }) {
@@ -41,7 +41,7 @@ describe("decideClaim", () => {
   it("emails the claimant on final approval", async () => {
     returns({ data: { ...outcome, status: "approved" } });
     await decideClaim(ID, true);
-    expect(sendEmail).toHaveBeenCalledWith("v@test.local", "Your claim for $25.00 has been approved", expect.any(Array), expect.any(Object));
+    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "Your claim for $25.00 has been approved", expect.any(Array), expect.any(Object));
   });
 
   it("emails the reason on rejection", async () => {
@@ -77,6 +77,6 @@ describe("markPaid", () => {
     returns({ data: { ...outcome, status: "paid" } });
     expect(await markPaid(ID, "TXN-1")).toEqual({ ok: true });
     expect(rpc).toHaveBeenCalledWith("mark_paid", { p_claim: ID, p_reference: "TXN-1" });
-    expect(sendEmail).toHaveBeenCalledWith("v@test.local", "You've been paid $25.00", expect.any(Array));
+    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "You've been paid $25.00", expect.any(Array));
   });
 });

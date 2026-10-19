@@ -20,7 +20,8 @@ function getTransporter() {
   transporter ??= nodemailer.createTransport({
     host: SMTP_HOST,
     port,
-    secure: port === 465,
+    secure: port === 465, // implicit TLS on 465
+    requireTLS: port !== 465, // and STARTTLS required on any other port: never send the password in clear
     auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
     // Fail fast rather than hold a function open for minutes on an unreachable server.
     connectionTimeout: 10_000,
