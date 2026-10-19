@@ -278,13 +278,6 @@ select lives_ok($$ insert into storage.objects (bucket_id, name) values ('receip
   'members upload into their own folder');
 select throws_ok($$ insert into storage.objects (bucket_id, name) values ('receipts', '00000000-0000-4000-8000-000000000b02/x/r.jpg') $$,
   '42501', null, 'members cannot upload into someone else''s folder');
--- Storage refuses SQL deletes unless asked (the app deletes through the Storage API, which runs the
--- same policy); this lets the test exercise receipts_delete directly.
-select set_config('storage.allow_delete_query', 'true', true);
-select results_eq($$ delete from storage.objects where name = '00000000-0000-4000-8000-000000000b01/z/new.jpg' returning name $$,
-  $$ values ('00000000-0000-4000-8000-000000000b01/z/new.jpg') $$, 'members delete their own unattached uploads');
-select is_empty($$ delete from storage.objects where name = '00000000-0000-4000-8000-000000000b01/a/r.jpg' returning name $$,
-  'but never a receipt a claim attaches');
 select results_eq($$ select action from public.claim_events where claim_id = pg_temp.claim('v1 taxi') order by at, id $$,
   $$ values ('submitted'), ('reviewed'), ('approved'), ('paid') $$, 'claimants see their claim''s history');
 reset role;

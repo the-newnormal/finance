@@ -185,7 +185,9 @@ begin
     raise exception 'Only core personnel can submit vendor invoices.' using errcode = '42501';
   end if;
 
-  select * into v_pool from public.pools where id = new.pool_id;
+  -- FOR SHARE: a concurrent move of this budget to another division waits for this claim, then
+  -- pools_before_update sees it and refuses; or the move goes first and this claim takes the new one.
+  select * into v_pool from public.pools where id = new.pool_id for share;
   if v_pool.id is null or not v_pool.active then
     raise exception 'That budget is not open for claims.';
   end if;
@@ -527,8 +529,9 @@ grant execute on function public.admin_add_member(uuid, text, text, public.membe
 
 -- ---------------------------------------------------------------------------------------------
 -- Receipts: private bucket, <auth uid>/<random>/<file>. Upload into your own folder only; read
--- your own files and those of any claim you can see; delete your own files only while no claim
--- attaches them (tidying up after a claim that wasn't submitted). Nobody updates files.
+-- your own files and those of any claim you can see. Nobody updates or deletes files through the
+-- API: a delete could race a claim attaching the same file, leaving the claim without its receipt.
+-- A file uploaded for a claim that was never submitted just stays, private, in its owner's folder.
 -- ---------------------------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('receipts', 'receipts', false, 10485760,
@@ -545,11 +548,4 @@ create policy receipts_select on storage.objects for select to authenticated usi
     (storage.foldername(name))[1] = auth.uid()::text
     or exists (select 1 from public.claims c where objects.name = any (c.attachment_paths))
   )
-);
-
-create policy receipts_delete on storage.objects for delete to authenticated using (
-  bucket_id = 'receipts'
-  and (storage.foldername(name))[1] = auth.uid()::text
-  and private.is_active()
-  and not exists (select 1 from public.claims c where objects.name = any (c.attachment_paths))
 );

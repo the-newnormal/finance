@@ -37,7 +37,7 @@ A claim moves `pending_review` → `pending_finance` → `approved` → `paid`, 
 - Budget amounts (`pool_budgets`) are visible only to core members of the division, Finance and admins; volunteers see pool names only.
 - Payout details are encrypted by the server (AES-256-GCM, `src/lib/crypto.ts`) with the claimant's id as additional authenticated data, so a ciphertext can't be moved to someone else's claim. `claims.payout_enc` is never granted to `authenticated`; Finance reads it only through `claim_payout_enc()`.
 - New tables, views and functions get no grants by default: grant what's needed in the same migration, `revoke execute … from public` on new functions, and create views `with (security_invoker = true)`.
-- Receipts live in the private `receipts` bucket at `<auth uid>/<random>/<file>`; a claim may only attach files already uploaded there. Anyone who can see a claim can read its files, nobody else; members may delete their own files only while no claim attaches them.
+- Receipts live in the private `receipts` bucket at `<auth uid>/<random>/<file>`; a claim may only attach files already uploaded there. Anyone who can see a claim can read its files, nobody else. Nobody updates or deletes receipts through the API (a delete could race a claim attaching the file).
 - A member and their divisions are saved together through `admin_add_member` / `admin_update_member` (SECURITY INVOKER: RLS and triggers still decide), never as separate requests.
 
 ## Security
