@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 // THE ONLY SERVICE-ROLE CLIENT. It bypasses RLS entirely, so only the files listed in
 // admin-imports.test.ts may import it, which fails if anything else does:
-// - the People page's actions (src/app/admin/people/actions.ts), which invite a login, and
+// - the People page's actions (src/app/(app)/admin/people/actions.ts), which invite a login, and
 //   deactivate or reactivate one, each after checking, as the signed-in admin, that it may.
 // Everything else reads and writes as the signed-in user (./server.ts) so RLS decides.
 //
