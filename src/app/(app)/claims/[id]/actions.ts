@@ -55,11 +55,16 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
   return { ok: true };
 }
 
-export async function markPaid(id: string, reference: string): Promise<ActionResult> {
+// Records the payment and takes it off the chosen bank account's expected balance, in one database
+// transaction (mark_paid).
+export async function markPaid(id: string, reference: string, accountId: string): Promise<ActionResult> {
   await requireMember();
   if (!uuid.safeParse(id).success) return { ok: false, error: "Claim not found." };
+  if (!uuid.safeParse(accountId).success) return { ok: false, error: "Choose the account you paid from." };
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("mark_paid", { p_claim: id, p_reference: reference }).single<Outcome>();
+  const { data, error } = await supabase
+    .rpc("mark_paid", { p_claim: id, p_reference: reference, p_account: accountId })
+    .single<Outcome>();
   if (error) return refusal(error);
 
   after(() => emailClaimant(data.claimant_id, `You've been paid ${formatSGD(data.amount_cents)}`, [

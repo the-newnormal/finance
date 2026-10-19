@@ -11,6 +11,7 @@ vi.mock("@/lib/notify", () => ({ emailClaimant: vi.fn() }));
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
 const ID = "40000000-0000-4000-8000-000000000001";
+const ACCOUNT = "50000000-0000-4000-8000-000000000001";
 const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_name: "Vol One", amount_cents: 2500, pool_name: "Iftar" };
 const rpc = vi.fn();
 
@@ -75,8 +76,13 @@ describe("decideClaim", () => {
 describe("markPaid", () => {
   it("records the payment and tells the claimant", async () => {
     returns({ data: { ...outcome, status: "paid" } });
-    expect(await markPaid(ID, "TXN-1")).toEqual({ ok: true });
-    expect(rpc).toHaveBeenCalledWith("mark_paid", { p_claim: ID, p_reference: "TXN-1" });
+    expect(await markPaid(ID, "TXN-1", ACCOUNT)).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("mark_paid", { p_claim: ID, p_reference: "TXN-1", p_account: ACCOUNT });
     expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "You've been paid $25.00", expect.any(Array));
+  });
+
+  it("needs the account it was paid from", async () => {
+    expect(await markPaid(ID, "TXN-1", "")).toEqual({ ok: false, error: "Choose the account you paid from." });
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

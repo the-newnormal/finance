@@ -25,6 +25,11 @@ create function pg_temp.claim(p_description text) returns uuid language sql secu
   select id from public.claims where description = p_description
 $$;
 
+-- The bank account Finance pays from (0002). Made as the owner, without the add_bank_account check.
+create function pg_temp.account() returns uuid language sql as $$
+  select '50000000-0000-4000-8000-000000000001'::uuid
+$$;
+
 -- ---------- fixtures (as the database owner) ----------
 insert into auth.users (id, email) values
   ('00000000-0000-4000-8000-000000000a01', 'adm@test.local'),
@@ -62,6 +67,8 @@ insert into public.pool_budgets (pool_id, allocated_cents) values
 insert into public.categories (id, name, active) values
   ('30000000-0000-4000-8000-000000000001', 'RLS Transport', true),
   ('30000000-0000-4000-8000-000000000002', 'RLS Hidden', false);
+
+insert into public.bank_accounts (id, name, last4) values ('50000000-0000-4000-8000-000000000001', 'RLS Joint A', '1234');
 
 -- The receipts each claim below attaches (claims refuse files that weren't uploaded).
 insert into storage.objects (bucket_id, name) values
@@ -148,7 +155,7 @@ select throws_ok($$ update public.claims set status = 'paid' $$, '42501', null,
   'claims cannot be updated through the Data API');
 select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v1 taxi'), true) $$, '42501', null,
   'nobody reviews their own claim');
-select throws_ok($$ select * from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-1') $$, '42501', null,
+select throws_ok($$ select * from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-1', null) $$, '42501', null,
   'volunteers cannot record payments');
 select throws_ok($$ select * from public.claim_payout_enc(pg_temp.claim('v1 taxi')) $$, '42501', null,
   'volunteers cannot read payout details');
@@ -241,9 +248,9 @@ select results_eq($$ select claimant_id::text, payout_enc from public.claim_payo
 select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v2 food'), true) $$, 'P0001',
   'This claim has already been decided.', 'a decided claim cannot be decided again');
 select lives_ok($$ select * from public.decide_claim(pg_temp.claim('v1 taxi'), true) $$, 'Finance approves');
-select throws_ok($$ select * from public.mark_paid(pg_temp.claim('v1 taxi'), 'x') $$, 'P0001',
+select throws_ok($$ select * from public.mark_paid(pg_temp.claim('v1 taxi'), 'x', pg_temp.account()) $$, 'P0001',
   'Enter the bank transaction reference.', 'paying needs a reference');
-select results_eq($$ select claimant_id::text, status::text from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-123') $$,
+select results_eq($$ select claimant_id::text, status::text from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-123', pg_temp.account()) $$,
   $$ values ('00000000-0000-4000-8000-000000000b01', 'paid') $$, 'Finance marks it paid; the claimant''s id comes back, never their email');
 select results_eq($$ select allocated_cents from public.pool_totals where pool_id = '20000000-0000-4000-8000-000000000e03' $$,
   $$ values (0::bigint) $$, 'a budget with no amount yet still shows in the totals');
