@@ -19,7 +19,9 @@ begin
     json_build_object('sub', p_user, 'role', 'authenticated')::text, true);
 end $$;
 
-create function pg_temp.claim(p_description text) returns uuid language sql as $$
+-- Looks the claim up as the database owner (security definer), whoever is signed in, so a test of a
+-- function's refusal really reaches the function instead of passing a null id.
+create function pg_temp.claim(p_description text) returns uuid language sql security definer as $$
   select id from public.claims where description = p_description
 $$;
 
