@@ -1,6 +1,5 @@
 "use server";
 
-import { headers } from "next/headers";
 import { safeNextPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 
@@ -11,13 +10,12 @@ export type LoginState =
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function requestOrigin() {
-  const h = await headers();
-  const origin = h.get("origin");
-  if (origin) return origin;
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  return `${proto}://${host}`;
+// The link's origin comes from configuration, never from the request: a forged Origin or Host
+// header could otherwise point someone's one-time token at another site.
+function siteUrl() {
+  const site = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!site) throw new Error("NEXT_PUBLIC_SITE_URL is not set");
+  return site;
 }
 
 export async function sendMagicLink(
@@ -34,7 +32,7 @@ export async function sendMagicLink(
 
   const supabase = await createClient();
   // The email template appends token_hash to this URL (see supabase/templates/magic-link.html).
-  const confirm = new URL("/auth/callback", await requestOrigin());
+  const confirm = new URL("/auth/callback", siteUrl());
   confirm.searchParams.set("next", next);
 
   const { error } = await supabase.auth.signInWithOtp({

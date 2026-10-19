@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatSGD, parseAmountToCents } from "./money";
+import { formatSGD, parseAmountToCents, parseBudgetToCents } from "./money";
 
 describe("parseAmountToCents", () => {
   it.each([
@@ -21,6 +21,13 @@ describe("parseAmountToCents", () => {
     expect(parseAmountToCents("1.15")).toBe(115);
     expect(parseAmountToCents("4.35")).toBe(435);
   });
+});
+
+describe("parseBudgetToCents", () => {
+  it.each([["0", 0], ["0.00", 0], ["$0", 0], ["1500", 150000]])("%j -> %i", (input, cents) => {
+    expect(parseBudgetToCents(input)).toBe(cents);
+  });
+  it.each(["", "-1", "abc"])("rejects %j", (input) => expect(parseBudgetToCents(input)).toBeNull());
 });
 
 describe("formatSGD", () => {

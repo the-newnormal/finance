@@ -14,6 +14,8 @@ export default async function PeoplePage() {
     supabase.from("divisions").select("id, name").order("name"),
     supabase.from("division_members").select("member_id, division_id"),
   ]);
+  // A failed read must show the error page, never an empty list an admin could then save over.
+  for (const r of [members, divisions, links]) if (r.error) throw new Error(`people page read failed: ${r.error.code}`);
   const byMember = new Map<string, string[]>();
   for (const l of links.data ?? []) byMember.set(l.member_id, [...(byMember.get(l.member_id) ?? []), l.division_id]);
 

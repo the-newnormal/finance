@@ -30,5 +30,9 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL("/login?error=link", origin));
+  // Keep where they were going, so the new link they ask for goes there too.
+  const login = new URL("/login", origin);
+  login.searchParams.set("error", "link");
+  login.searchParams.set("next", next);
+  return NextResponse.redirect(login);
 }

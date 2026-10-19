@@ -55,28 +55,30 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
     return { ok: false, error: "The invite couldn't be sent. Try again." };
   }
 
+  // The member row and their divisions, in one transaction (admin_add_member, as the admin).
   const supabase = await createClient();
-  const { error: insertError } = await supabase.from("members").insert({
-    id: data.user.id,
-    email: v.email,
-    name: v.name,
-    role: v.role,
-    finance: v.finance,
+  const { error: addError } = await supabase.rpc("admin_add_member", {
+    p_id: data.user.id,
+    p_email: v.email,
+    p_name: v.name,
+    p_role: v.role,
+    p_finance: v.finance,
+    p_divisions: v.divisionIds,
   });
-  if (insertError) {
+  if (addError) {
     await service.auth.admin.deleteUser(data.user.id);
-    console.error("members insert failed", { code: insertError.code });
+    console.error("admin_add_member failed", { code: addError.code });
     return { ok: false, error: "The account couldn't be created." };
   }
 
-  const divisionError = await setDivisions(supabase, data.user.id, v.role === "volunteer" ? [] : v.divisionIds);
   revalidatePath("/admin/people");
-  return divisionError ?? { ok: true };
+  return { ok: true };
 }
 
-// Changes someone's role, Finance flag, divisions and whether their account is active, as the
-// signed-in admin (RLS; the database refuses changes to your own access). Deactivating also bans
-// the login, so their current sessions stop working.
+// Changes someone's role, Finance flag, divisions and whether their account is active, in one
+// transaction as the signed-in admin (admin_update_member: RLS, and the database refuses changes to
+// your own access). Then the login's ban is set to match, every time, so retrying a save whose ban
+// update failed fixes it: deactivated logins can't sign in, and their sessions stop.
 export async function updateMember(id: string, input: z.input<typeof access> & { active: boolean }): Promise<Result> {
   await requireAdmin();
   const parsed = access.extend({ active: z.boolean() }).safeParse(input);
@@ -84,52 +86,29 @@ export async function updateMember(id: string, input: z.input<typeof access> & {
   const v = parsed.data;
 
   const supabase = await createClient();
-  const { data: before } = await supabase.from("members").select("active").eq("id", id).maybeSingle();
-  if (!before) return { ok: false, error: "That person wasn't found." };
-
-  const { error } = await supabase
-    .from("members")
-    .update({ role: v.role, finance: v.finance, active: v.active })
-    .eq("id", id);
+  const { error } = await supabase.rpc("admin_update_member", {
+    p_id: id,
+    p_role: v.role,
+    p_finance: v.finance,
+    p_active: v.active,
+    p_divisions: v.divisionIds,
+  });
   if (error) {
     if (error.code === "42501") return { ok: false, error: "You can't change your own access." };
-    console.error("members update failed", { code: error.code });
+    if (error.code === "P0002") return { ok: false, error: "That person wasn't found." };
+    console.error("admin_update_member failed", { code: error.code });
     return { ok: false, error: "The change couldn't be saved." };
   }
-
-  const divisionError = await setDivisions(supabase, id, v.role === "volunteer" ? [] : v.divisionIds);
-  if (divisionError) return divisionError;
-
-  if (before.active !== v.active) {
-    const service = serviceClient();
-    if ("ok" in service) return service;
-    const { error: banError } = await service.auth.admin.updateUserById(id, {
-      ban_duration: v.active ? "none" : BANNED_FOR,
-    });
-    if (banError) {
-      console.error("ban update failed", { code: banError.code });
-      return { ok: false, error: "Saved, but their sign-in couldn't be updated. Try again." };
-    }
-  }
-
   revalidatePath("/admin/people");
-  return { ok: true };
-}
 
-async function setDivisions(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  memberId: string,
-  divisionIds: string[],
-): Promise<Result | null> {
-  const { error: delError } = await supabase.from("division_members").delete().eq("member_id", memberId);
-  if (!delError && divisionIds.length) {
-    const { error } = await supabase
-      .from("division_members")
-      .insert(divisionIds.map((division_id) => ({ member_id: memberId, division_id })));
-    if (!error) return null;
-    console.error("division_members insert failed", { code: error.code });
-  } else if (!delError) {
-    return null;
+  const service = serviceClient();
+  if ("ok" in service) return { ok: false, error: `Saved, but their sign-in wasn't updated. ${service.ok ? "" : service.error}` };
+  const { error: banError } = await service.auth.admin.updateUserById(id, {
+    ban_duration: v.active ? "none" : BANNED_FOR,
+  });
+  if (banError) {
+    console.error("ban update failed", { code: banError.code });
+    return { ok: false, error: "Saved, but their sign-in couldn't be updated. Save again to retry." };
   }
-  return { ok: false, error: "Saved, but their divisions couldn't be updated. Try again." };
+  return { ok: true };
 }

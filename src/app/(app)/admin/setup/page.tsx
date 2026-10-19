@@ -15,6 +15,7 @@ export default async function SetupPage() {
     supabase.from("pools").select("id, name, kind, division_id, active").order("name"),
     supabase.from("pool_budgets").select("pool_id, allocated_cents"),
   ]);
+  for (const r of [divisions, categories, pools, budgets]) if (r.error) throw new Error(`setup page read failed: ${r.error.code}`);
   const allocated = new Map((budgets.data ?? []).map((b) => [b.pool_id as string, b.allocated_cents as number]));
 
   return (

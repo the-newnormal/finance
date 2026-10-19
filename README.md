@@ -10,8 +10,9 @@ Reviewed by CodeRabbit (`.coderabbit.yaml`) and Qodo (`.pr_agent.toml`). The eng
 Needs Docker (for the local Supabase stack).
 ```bash
 pnpm install
-cp .env.example .env.local        # fill in the keys `pnpm supabase status` prints
-pnpm supabase start               # local Postgres, Auth, Storage and Mailpit
+pnpm supabase start               # local Postgres, Auth, Storage and Mailpit; prints its keys
+cp .env.example .env.local        # fill in from `pnpm supabase status`, NEXT_PUBLIC_SITE_URL=http://localhost:3000,
+                                  # and PAYOUT_ENCRYPTION_KEY from `pnpm gen-key`
 pnpm supabase db reset            # apply migrations + seed
 pnpm dev
 ```

@@ -1,10 +1,8 @@
 import { AuthApiError, AuthRetryableFetchError, AuthUnknownError } from "@supabase/supabase-js";
-import { headers } from "next/headers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
 import { sendMagicLink } from "./actions";
 
-vi.mock("next/headers", () => ({ headers: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 const signInWithOtp = vi.fn();
@@ -17,13 +15,14 @@ function submit(email: string, next?: string) {
 }
 
 beforeEach(() => {
-  vi.mocked(headers).mockResolvedValue(new Headers({ origin: "https://finance.test" }) as never);
+  vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://finance.test");
   vi.mocked(createClient).mockResolvedValue({ auth: { signInWithOtp } } as never);
   signInWithOtp.mockReset().mockResolvedValue({ data: {}, error: null });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -58,15 +57,11 @@ describe("sendMagicLink", () => {
     expect(options.emailRedirectTo).toBe("https://finance.test/auth/callback?next=%2Fclaims");
   });
 
-  it("builds the origin from forwarded headers when there's no Origin header", async () => {
-    vi.mocked(headers).mockResolvedValue(
-      new Headers({ "x-forwarded-host": "finance.vercel.app", "x-forwarded-proto": "https" }) as never,
-    );
+  it("builds the link from the configured site URL, never from request headers", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://finance.vercel.app");
     await submit("ada@newnormal.sg");
     const { options } = signInWithOtp.mock.calls[0][0];
-    expect(options.emailRedirectTo).toBe(
-      "https://finance.vercel.app/auth/callback?next=%2Fclaims",
-    );
+    expect(options.emailRedirectTo).toBe("https://finance.vercel.app/auth/callback?next=%2Fclaims");
   });
 
   // Errors that depend on the account (or its email limits) must look like success,
