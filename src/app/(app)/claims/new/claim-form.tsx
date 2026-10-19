@@ -77,7 +77,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
       const uploaded: Attachment[] = [];
       for (const a of files) {
         if (a.path) { uploaded.push(a); continue; }
-        const safe = a.file.name.replace(/[^\w.-]+/g, "_").slice(-80);
+        // Only letters, digits, _ - and single dots (the database refuses ".." in any path).
+        const safe = a.file.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
         const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
         const { error } = await storage.upload(path, a.file, { contentType: a.file.type, upsert: false });
         if (error) {
@@ -211,7 +212,9 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
             <CardTitle>{isInvoice ? "Pay the vendor via" : "Reimburse me via"}</CardTitle>
             <CardDescription>PayNow is preferred: it&apos;s fastest for Finance.</CardDescription>
           </CardHeader>
+          {/* Locked while submitting: what is sent is what is on screen. */}
           <CardContent className="grid gap-4">
+            <fieldset disabled={busy} className="grid gap-4 disabled:opacity-60">
             <div className="grid gap-2">
               {payoutOptions.map((t) => (
                 <label key={t} className={cn("flex cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm",
@@ -261,6 +264,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
                 <p className="text-xs text-ink-soft">Your details are encrypted and only Finance can see them in full.</p>
               </>
             )}
+            </fieldset>
           </CardContent>
         </Card>
 
