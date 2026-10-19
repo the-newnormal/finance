@@ -162,12 +162,15 @@ done 2>/dev/null
 if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
   # Back up the index so a refusal leaves whatever the user had staged intact.
   # It gets a restorable name only once staging is done (below).
-  backup=$(mktemp "$index.autopush.tmp.XXXXXX" 2>/dev/null) || backup=
-  if [ -n "$backup" ] && ! cp "$index" "$backup" 2>/dev/null; then
+  # Without a backup a refusal couldn't put the user's staging back, so commit nothing.
+  backup=$(mktemp "$index.autopush.tmp.XXXXXX" 2>/dev/null) ||
+    say "nothing committed - could not back up the index on $branch"
+  if ! cp "$index" "$backup" 2>/dev/null; then
     rm -f "$backup"; backup=
+    say "nothing committed - could not back up the index on $branch"
   fi
   # Put the user's index back as it was before this run staged anything.
-  restore() { if [ -n "$backup" ]; then mv -f "$backup" "$index"; else git reset -q; fi; }
+  restore() { mv -f "$backup" "$index"; }
 
   # Leave out untracked nested repositories (clones) and Claude Code's
   # .claude/worktrees/ at any depth (even a stale one git no longer sees as a
@@ -183,7 +186,7 @@ if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
     staging=; restore
     say "nothing committed - staging failed on $branch: $out"
   fi
-  if [ -n "$backup" ] && tree=$(git write-tree 2>/dev/null) &&
+  if tree=$(git write-tree 2>/dev/null) &&
      mv -f "$backup" "$index.autopush.$head.$tree" 2>/dev/null; then
     backup=$index.autopush.$head.$tree
   fi
