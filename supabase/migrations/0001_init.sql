@@ -194,6 +194,9 @@ begin
   if not exists (select 1 from public.categories where id = new.category_id and active) then
     raise exception 'Choose a valid category.';
   end if;
+  if new.expense_date > (now() at time zone 'Asia/Singapore')::date then
+    raise exception 'The purchase date can''t be in the future.';
+  end if;
 
   foreach v_path in array new.attachment_paths loop
     if v_path not like v_me.id::text || '/%' or v_path like '%..%' then

@@ -126,6 +126,13 @@ select throws_ok($$
           array['00000000-0000-4000-8000-000000000b01/never/uploaded.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
 $$, 'P0001', 'Upload the receipt first.', 'claims refuse receipts that were never uploaded');
 
+select throws_ok($$
+  insert into public.claims (pool_id, category_id, description, amount_cents, expense_date, attachment_paths,
+                             payout_type, payout_masked, payout_enc)
+  values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 future', 100,
+          (now() + interval '3 days')::date, array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+$$, 'P0001', 'The purchase date can''t be in the future.', 'purchases can''t be in the future');
+
 select throws_ok($$ select payout_enc from public.claims $$, '42501', null,
   'payout_enc is not readable through the Data API');
 select throws_ok($$ update public.claims set status = 'paid' $$, '42501', null,
