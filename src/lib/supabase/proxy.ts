@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { DEFAULT_AFTER_LOGIN, safeNextPath } from "@/lib/auth/safe-next";
 import { supabaseEnv } from "./env";
 
-const PROTECTED_PREFIXES = ["/claims", "/review", "/budgets", "/payouts", "/bank", "/admin", "/inactive"];
+const PROTECTED_PREFIXES = ["/claims", "/review", "/budgets", "/payouts", "/bank", "/people", "/setup", "/inactive"];
 
 function isProtected(pathname: string) {
   return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
