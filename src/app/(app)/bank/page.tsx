@@ -11,8 +11,11 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
   await requireFinance();
   const params = await searchParams;
   const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
-  const account = /^[0-9a-f-]{36}$/.test(one(params.account) ?? "") ? one(params.account)! : null;
-  const page = Math.max(0, Math.floor(Number(one(params.page) ?? 0)) || 0);
+  // Anything malformed is ignored (all accounts, first page) rather than reaching the query.
+  const rawAccount = one(params.account) ?? "";
+  const account = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawAccount) ? rawAccount : null;
+  const rawPage = one(params.page) ?? "0";
+  const page = /^\d{1,6}$/.test(rawPage) ? Number(rawPage) : 0;
   const supabase = await createClient();
   // RLS: Finance and admins only; the page guard above is just for navigation.
   const { data: accounts, error } = await supabase
