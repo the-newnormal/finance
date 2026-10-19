@@ -29,7 +29,7 @@ function AccessFields({ value, onChange, divisions }: { value: Pick<U, "role" | 
         </Select>
       </Field>
       {value.role !== "volunteer" && (
-        <Field label="Divisions">
+        <Field label="Divisions" group>
           <div className="flex flex-wrap gap-2">
             {divisions.map((d) => {
               const on = value.divisionIds.includes(d.id);
