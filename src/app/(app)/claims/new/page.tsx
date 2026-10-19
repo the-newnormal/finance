@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/page-header";
+import { singaporeToday } from "@/lib/dates";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { canReview, type Category, type PayoutType, type Pool } from "@/lib/types";
@@ -20,6 +21,7 @@ export default async function NewClaimPage() {
       <PageHeader title="New claim" description="Keep your receipt handy: a photo or PDF works." />
       <ClaimForm
         uid={me.id}
+        today={singaporeToday()}
         canInvoice={canReview(me)}
         goesStraightToFinance={me.role !== "volunteer" || me.finance}
         pools={(pools.data ?? []) as Pick<Pool, "id" | "name" | "kind">[]}

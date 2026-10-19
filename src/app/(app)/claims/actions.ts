@@ -6,12 +6,13 @@ import { encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
 import { parseAmountToCents } from "@/lib/money";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
+import { singaporeToday } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
 
 // claims.amount_cents's limit in the database.
 const MAX_CLAIM_CENTS = 100_000_000;
 
-export type SubmitResult = { ok: true; id: string } | { ok: false; error: string };
+export type SubmitResult = { ok: true; id: string; payoutSaved: boolean } | { ok: false; error: string };
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(""));
 const name = z.string().trim().min(2, "Enter the account holder's name").max(70);
@@ -66,6 +67,9 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
   if (!amount_cents) return { ok: false, error: "Enter a valid amount, e.g. 42.50." };
   if (amount_cents > MAX_CLAIM_CENTS) return { ok: false, error: "A single claim can be at most $1,000,000." };
   if (v.kind === "invoice" && !v.vendorName) return { ok: false, error: "Enter the vendor's name." };
+  if (v.kind === "reimbursement" && v.expenseDate && v.expenseDate > singaporeToday()) {
+    return { ok: false, error: "The purchase date can't be in the future." };
+  }
 
   const supabase = await createClient();
   let payout_type, payout_masked, payout_enc;
@@ -111,15 +115,20 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
     return { ok: false, error: "The claim couldn't be submitted. Try again." };
   }
 
+  // The claim is in; remembering the details is a convenience, so a failure is reported, not fatal.
+  let payoutSaved = true;
   if (v.savePayout && v.payout.type !== "saved" && v.kind === "reimbursement") {
     const { error: saveError } = await supabase
       .from("member_payouts")
       .upsert({ member_id: me.id, payout_type, payout_masked, payout_enc, updated_at: new Date().toISOString() });
-    if (saveError) console.error("member_payouts upsert failed", { code: saveError.code });
+    if (saveError) {
+      console.error("member_payouts upsert failed", { code: saveError.code });
+      payoutSaved = false;
+    }
   }
 
   revalidatePath("/claims");
-  return { ok: true, id: data.id as string };
+  return { ok: true, id: data.id as string, payoutSaved };
 }
 
 export async function forgetSavedPayout() {

@@ -20,7 +20,7 @@ const EVENT_LABEL: Record<ClaimEvent["action"], string> = {
 };
 
 export default async function ClaimPage({ params, searchParams }: PageProps<"/claims/[id]">) {
-  const [{ id }, { submitted }] = await Promise.all([params, searchParams]);
+  const [{ id }, { submitted, unsaved }] = await Promise.all([params, searchParams]);
   const me = await requireMember();
   const supabase = await createClient();
 
@@ -43,6 +43,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
         <ArrowLeft className="size-4" /> Back
       </Link>
       {submitted && <Alert tone="success" className="mb-6">Thanks! Your claim has been submitted. We&apos;ll email you when it&apos;s approved.</Alert>}
+      {unsaved && <Alert className="mb-6">Your payout details couldn&apos;t be remembered for next time. You&apos;ll need to enter them again on your next claim.</Alert>}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="grid content-start gap-6">

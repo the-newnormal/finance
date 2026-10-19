@@ -43,7 +43,7 @@ const base: ClaimInput = {
 
 describe("submitClaim", () => {
   it("encrypts the payout details for this member and inserts the claim", async () => {
-    expect(await submitClaim(base)).toEqual({ ok: true, id: "claim-1" });
+    expect(await submitClaim(base)).toEqual({ ok: true, id: "claim-1", payoutSaved: true });
     const row = (tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
     expect(row).toMatchObject({ amount_cents: 2540, payout_type: "paynow_mobile", payout_masked: "Mobile •••• 4567", vendor_name: null });
     expect(decryptPayout(row.payout_enc as string, ME)).toEqual({ type: "paynow_mobile", name: "Tan Ah Kow", proxy: "+6591234567" });
@@ -61,6 +61,16 @@ describe("submitClaim", () => {
     tables.member_payouts = table({ data: { payout_type: "bank", payout_masked: "DBS •••• 1234", payout_enc: "v1.x.y.z" }, error: null });
     await submitClaim({ ...base, payout: { type: "saved" } });
     expect(tables.claims.insert).toHaveBeenCalledWith(expect.objectContaining({ payout_type: "bank", payout_enc: "v1.x.y.z" }));
+  });
+
+  it("says when the details couldn't be remembered, though the claim went in", async () => {
+    tables.member_payouts = table({ data: null, error: { code: "XX000" } });
+    expect(await submitClaim({ ...base, savePayout: true })).toEqual({ ok: true, id: "claim-1", payoutSaved: false });
+  });
+
+  it("refuses a future purchase date", async () => {
+    expect(await submitClaim({ ...base, expenseDate: "2999-01-01" })).toEqual({ ok: false, error: "The purchase date can't be in the future." });
+    expect(tables.claims.insert).not.toHaveBeenCalled();
   });
 
   it("saves the details for next time when asked", async () => {

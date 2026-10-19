@@ -3,7 +3,7 @@
 import { FileText, Paperclip, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { submitClaim, type ClaimInput } from "../actions";
+import { forgetSavedPayout, submitClaim, type ClaimInput } from "../actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   uid: string;
+  /** Today in Singapore (YYYY-MM-DD): the latest purchase date. */
+  today: string;
   canInvoice: boolean;
   goesStraightToFinance: boolean;
   pools: { id: string; name: string; kind: "event" | "general" }[];
@@ -29,7 +31,7 @@ const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/h
 // A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
 type Attachment = { file: File; path?: string };
 
-export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categories, savedPayout }: Props) {
+export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools, categories, savedPayout }: Props) {
   const router = useRouter();
   const [kind, setKind] = useState<"reimbursement" | "invoice">("reimbursement");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -52,11 +54,10 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
     setFiles(next);
   }
 
-  // Removing an uploaded file deletes it too (allowed while no claim attaches it).
+  // Files can't change while a submission is uploading them (the controls are disabled), so what
+  // is attached is always what's on screen. Removed files stay private in the member's own folder.
   function removeFile(i: number) {
-    const gone = files[i];
-    setFiles(files.filter((_, j) => j !== i));
-    if (gone.path) void createClient().storage.from("receipts").remove([gone.path]);
+    if (!busy) setFiles(files.filter((_, j) => j !== i));
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -104,7 +105,7 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
         savePayout: fd.get("savePayout") === "on",
       });
       if (!res.ok) { setError(res.error); setBusy(false); return; }
-      router.push(`/claims/${res.id}?submitted=1`);
+      router.push(`/claims/${res.id}?submitted=1${res.payoutSaved ? "" : "&unsaved=1"}`);
     } catch {
       setError("Upload failed. Check your connection and try again.");
       setBusy(false);
@@ -162,7 +163,7 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
                 <Field label="Payment due"><Input name="dueDate" type="date" /></Field>
               </>
             ) : (
-              <Field label="Date of purchase"><Input name="expenseDate" type="date" max={new Date().toISOString().slice(0, 10)} /></Field>
+              <Field label="Date of purchase"><Input name="expenseDate" type="date" max={today} /></Field>
             )}
             <Field label="Description" className="sm:col-span-2">
               <Textarea name="description" required maxLength={500} placeholder={isInvoice ? "e.g. Venue rental for 12 Oct workshop, 9am–5pm" : "e.g. Snacks and water for 40 volunteers"} />
@@ -176,17 +177,17 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
             <CardDescription>Images or PDFs, up to 10 MB each, max {MAX_FILES} files.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
-            <label className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-ink/25 bg-canvas/60 px-4 py-8 text-center text-sm hover:bg-canvas">
+            <label aria-disabled={busy} className="flex cursor-pointer flex-col aria-disabled:pointer-events-none aria-disabled:opacity-50 items-center justify-center gap-1 rounded-xl border border-dashed border-ink/25 bg-canvas/60 px-4 py-8 text-center text-sm hover:bg-canvas">
               <Paperclip className="size-5 text-brand-deep" />
               <span className="font-medium">Tap to add files</span>
               <span className="text-xs text-ink-soft">or take a photo</span>
-              <input type="file" accept={ACCEPTED.join(",")} multiple className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              <input type="file" accept={ACCEPTED.join(",")} multiple disabled={busy} className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             </label>
             {files.map(({ file: f }, i) => (
               <div key={i} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">
                 <FileText className="size-4 text-ink-soft" />
                 <span className="flex-1 truncate">{f.name}</span>
-                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => removeFile(i)}><X className="size-4" /></button>
+                <button type="button" aria-label={`Remove ${f.name}`} disabled={busy} onClick={() => removeFile(i)}><X className="size-4" /></button>
               </div>
             ))}
           </CardContent>
@@ -212,6 +213,12 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
                   {(t === "paynow_mobile" || t === "paynow_uen") && <span className="rounded-full bg-teal/60 px-2 py-0.5 text-[11px]">Preferred</span>}
                 </label>
               ))}
+              {savedPayout && !isInvoice && (
+                <button type="button" className="justify-self-start text-xs text-ink-soft underline-offset-4 hover:underline"
+                  onClick={async () => { await forgetSavedPayout(); setPayoutType("paynow_mobile"); router.refresh(); }}>
+                  Forget my saved details
+                </button>
+              )}
             </div>
 
             {effectivePayout !== "saved" && (

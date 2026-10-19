@@ -20,11 +20,11 @@ export default async function MyClaimsPage() {
       .from("claims")
       .select(ROW_COLUMNS)
       .eq("claimant_id", me.id)
-      .order("created_at", { ascending: false })
+      .order("created_at")
       .order("id")
       .range(from, to),
   );
-  const claims = await withNames(rows);
+  const claims = (await withNames(rows)).reverse(); // newest first
 
   const sum = (pred: (c: (typeof claims)[number]) => boolean) => {
     const cs = claims.filter(pred);

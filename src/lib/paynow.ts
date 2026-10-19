@@ -1,3 +1,5 @@
+import { singaporeDate } from "./dates";
+
 /**
  * Builds an SGQR / EMVCo-compliant PayNow payload. Scanning the resulting QR
  * in any Singapore banking app pre-fills the payee, amount and reference; the
@@ -45,8 +47,9 @@ export function buildPayNowPayload(opts: {
   reference: string;
   expiresInDays?: number;
 }) {
+  // The expiry is a calendar date, so take it in Singapore time (a UTC date is a day early before 8am).
   const expiry = new Date(Date.now() + (opts.expiresInDays ?? 7) * 86_400_000);
-  const yyyymmdd = expiry.toISOString().slice(0, 10).replace(/-/g, "");
+  const yyyymmdd = singaporeDate(expiry).replace(/-/g, "");
 
   const merchant =
     tlv("00", "SG.PAYNOW") +
