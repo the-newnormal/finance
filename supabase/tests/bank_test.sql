@@ -52,6 +52,12 @@ select throws_ok($$ select public.add_bank_account('Bank Joint Z', 'DBS', '3333'
   'The date can''t be in the future.', 'no future opening balance');
 select throws_ok($$ select public.record_bank_entry(pg_temp.acct('Bank Joint A'), 'grant', 100, '2026-09-30', 'Old grant') $$, 'P0001',
   'The date is before Bank Joint A''s opening balance (01 Oct 2026), which already includes it.', 'no entries before the opening balance');
+select throws_ok($$ select public.record_bank_entry(pg_temp.acct('Bank Joint A'), 'adjustment', 100, null, 'Match DBS balance', 1) $$,
+  'P0001', 'The balance has changed since you compared it. Compare with DBS again.', 'a correction made from a stale balance is refused');
+select lives_ok($$ select public.record_bank_entry(pg_temp.acct('Bank Joint A'), 'adjustment', 100, null, 'Match DBS balance', 699850) $$,
+  'a correction made from the current balance is saved');
+select lives_ok($$ select public.record_bank_entry(pg_temp.acct('Bank Joint A'), 'adjustment', -100, null, 'Undo test correction') $$,
+  'and corrected back');
 select lives_ok($$ select public.transfer_between_accounts(pg_temp.acct('Bank Joint A'), pg_temp.acct('Bank Joint B'), 100000, null, null) $$, 'Finance moves money between accounts');
 select throws_ok($$ select public.transfer_between_accounts(pg_temp.acct('Bank Joint A'), pg_temp.acct('Bank Joint A'), 1, null, null) $$, 'P0001', 'Choose two different accounts.', 'a transfer needs two accounts');
 select results_eq($$ select pg_temp.balance('Bank Joint A'), pg_temp.balance('Bank Joint B') $$,

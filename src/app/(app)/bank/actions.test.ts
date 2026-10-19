@@ -23,12 +23,18 @@ describe("recordEntry", () => {
     expect(await recordEntry({ ...base, kind: "grant", direction: "out" })).toEqual({ ok: true });
     expect(rpc).toHaveBeenCalledWith("record_bank_entry", {
       p_account: A, p_kind: "grant", p_amount_cents: 125050, p_date: "2026-10-19", p_note: "NAC grant",
+      p_expected_balance_cents: null,
     });
   });
 
   it("signs an adjustment by its direction", async () => {
     await recordEntry({ ...base, kind: "adjustment", direction: "out", amount: "3.50", note: "DBS fee" });
     expect(rpc.mock.calls[0][1]).toMatchObject({ p_kind: "adjustment", p_amount_cents: -350 });
+  });
+
+  it("passes the balance a DBS correction was computed from", async () => {
+    await recordEntry({ ...base, kind: "adjustment", direction: "in", amount: "1", note: "Match DBS balance", expectedBalanceCents: 99_900 });
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_amount_cents: 100, p_expected_balance_cents: 99_900 });
   });
 
   it("needs a note", async () => {
