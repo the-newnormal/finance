@@ -4,10 +4,14 @@ import { notFound } from "next/navigation";
 import { Alert } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import QRCode from "qrcode";
+import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
+import { buildPayNowPayload } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import { CLAIM_COLUMNS, PAYOUT_LABEL, type Claim, type ClaimEvent } from "@/lib/types";
+import { CLAIM_COLUMNS, isFinance, PAYOUT_LABEL, type Claim, type ClaimEvent, type Member } from "@/lib/types";
+import { MarkPaidForm, ReviewActions } from "./claim-actions";
 
 export const metadata = { title: "Claim" };
 
@@ -39,6 +43,9 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   ]);
   for (const r of [pool, category, events, files]) if (r.error) throw new Error(`claim page read failed`);
   const ref = `NN-${claim.id.slice(0, 8).toUpperCase()}`;
+  const { data: myDivisions } = await supabase.from("division_members").select("division_id").eq("member_id", me.id);
+  const may = permissions(me, claim, (myDivisions ?? []).map((d) => d.division_id as string));
+  const payout = may.seePayout ? await payoutPanel(supabase, claim, ref) : null;
 
   return (
     <>
@@ -101,6 +108,50 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
         </div>
 
         <div className="grid content-start gap-6">
+          {may.decide && (
+            <Card>
+              <CardHeader><CardTitle>{claim.status === "pending_finance" ? "Finance approval" : "Your review"}</CardTitle></CardHeader>
+              <CardContent>
+                <ReviewActions claimId={claim.id} canApprove canReject
+                  approveLabel={claim.status === "pending_finance" ? "Approve for payment" : "Approve"} />
+              </CardContent>
+            </Card>
+          )}
+
+          {payout && (
+            <Card>
+              <CardHeader><CardTitle>{claim.kind === "invoice" ? "Pay vendor" : "Reimburse"}</CardTitle></CardHeader>
+              <CardContent className="grid gap-4 text-sm">
+                {"error" in payout ? (
+                  <Alert>{payout.error}</Alert>
+                ) : (
+                  <>
+                    {payout.qr && (
+                      <div className="grid justify-items-center gap-2 rounded-xl bg-white p-4">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={payout.qr} alt="PayNow QR code" className="size-56" />
+                        <p className="text-center text-xs text-ink-soft">Scan with the New Normal bank app. Amount and reference are pre-filled.</p>
+                      </div>
+                    )}
+                    <dl className="grid gap-2">
+                      <Item label="Method">{PAYOUT_LABEL[payout.details.type]}{payout.details.type === "bank" && " (manual transfer)"}</Item>
+                      <Item label="Name">{payout.details.name}</Item>
+                      {payout.details.proxy && <Item label={payout.details.type === "paynow_uen" ? "UEN" : "Mobile"}><span className="font-mono">{payout.details.proxy}</span></Item>}
+                      {payout.details.type === "bank" && (
+                        <>
+                          <Item label="Bank">{payout.details.bankName}</Item>
+                          <Item label="Account"><span className="font-mono">{payout.details.accountNumber}</span></Item>
+                        </>
+                      )}
+                      <Item label="Reference"><span className="font-mono">{ref}</span></Item>
+                    </dl>
+                  </>
+                )}
+                {may.markPaid && <MarkPaidForm claimId={claim.id} />}
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader><CardTitle>History</CardTitle></CardHeader>
             <CardContent>
@@ -133,4 +184,52 @@ function Item({ label, children, className }: { label: string; children: React.R
       <dd className="mt-0.5">{children}</dd>
     </div>
   );
+}
+
+// What to offer this viewer. Display only: decide_claim, mark_paid and claim_payout_enc check again.
+function permissions(me: Member, c: Claim, myDivisions: string[]) {
+  const own = c.claimant_id === me.id;
+  const reviews =
+    c.status === "pending_review" && !own &&
+    (isFinance(me) || (me.role !== "volunteer" && myDivisions.includes(c.division_id)));
+  const finalises = c.status === "pending_finance" && isFinance(me) && (!own || me.finance);
+  return {
+    decide: reviews || finalises,
+    seePayout: isFinance(me) && (c.status === "pending_finance" || c.status === "approved"),
+    markPaid: isFinance(me) && c.status === "approved",
+  };
+}
+
+// Finance's view of where the money goes: decrypted here, with the claimant's id as AAD, and a
+// PayNow QR once the claim is approved.
+async function payoutPanel(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  claim: Claim,
+  ref: string,
+): Promise<{ details: PayoutDetails; qr: string | null } | { error: string }> {
+  const { data, error } = await supabase
+    .rpc("claim_payout_enc", { p_claim: claim.id })
+    .maybeSingle<{ claimant_id: string; payout_enc: string }>();
+  if (error || !data) return { error: "Payout details aren't available." };
+  let details: PayoutDetails;
+  try {
+    details = decryptPayout(data.payout_enc, data.claimant_id);
+  } catch {
+    console.error("payout decrypt failed", { code: "decrypt" });
+    return { error: "These payout details can't be read (wrong key, or they were altered). Ask the claimant to resubmit." };
+  }
+  let qr: string | null = null;
+  if (claim.status === "approved" && details.type !== "bank" && details.proxy) {
+    qr = await QRCode.toDataURL(
+      buildPayNowPayload({
+        proxyType: details.type === "paynow_mobile" ? "mobile" : "uen",
+        proxy: details.proxy,
+        amountCents: claim.amount_cents,
+        payeeName: details.name,
+        reference: ref,
+      }),
+      { margin: 1, width: 320, color: { dark: "#34363e", light: "#ffffff" } },
+    );
+  }
+  return { details, qr };
 }
