@@ -168,6 +168,20 @@ select lives_ok($$
 $$, 'a second volunteer submits a claim');
 select is_empty($$ select id from public.claims where description = 'v1 taxi' $$,
   'volunteers cannot see other people''s claims');
+select lives_ok($$
+  insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
+                             payout_type, payout_masked, payout_enc, submission_id)
+  values ('20000000-0000-4000-8000-000000000e02', '30000000-0000-4000-8000-000000000001', 'v2 once', 900,
+          array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c',
+          '60000000-0000-4000-8000-000000000001')
+$$, 'a claim with a submission id');
+select throws_ok($$
+  insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
+                             payout_type, payout_masked, payout_enc, submission_id)
+  values ('20000000-0000-4000-8000-000000000e02', '30000000-0000-4000-8000-000000000001', 'v2 once (retry)', 900,
+          array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c',
+          '60000000-0000-4000-8000-000000000001')
+$$, '23505', null, 'a retried submission cannot create a second claim');
 reset role;
 
 -- ---------- core c1 (division D1) ----------
@@ -214,7 +228,7 @@ select results_eq($$ select status::text, rejection_reason from public.claims wh
 
 -- ---------- finance fin ----------
 select pg_temp.login('00000000-0000-4000-8000-000000000f01');
-select results_eq($$ select count(*)::int from public.claims $$, $$ values (3) $$, 'Finance sees every claim');
+select results_eq($$ select count(*)::int from public.claims $$, $$ values (4) $$, 'Finance sees every claim');
 select results_eq($$ select claimant_id::text, payout_enc from public.claim_payout_enc(pg_temp.claim('v1 taxi')) $$,
   $$ values ('00000000-0000-4000-8000-000000000b01', 'v1.a.b.c') $$, 'Finance reads payout details to pay');
 select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v2 food'), true) $$, 'P0001',
@@ -222,8 +236,8 @@ select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v2 food'), 
 select lives_ok($$ select * from public.decide_claim(pg_temp.claim('v1 taxi'), true) $$, 'Finance approves');
 select throws_ok($$ select * from public.mark_paid(pg_temp.claim('v1 taxi'), 'x') $$, 'P0001',
   'Enter the bank transaction reference.', 'paying needs a reference');
-select results_eq($$ select claimant_email, status::text from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-123') $$,
-  $$ values ('v1@test.local', 'paid') $$, 'Finance marks it paid and gets the claimant''s e-mail');
+select results_eq($$ select claimant_id::text, status::text from public.mark_paid(pg_temp.claim('v1 taxi'), 'TXN-123') $$,
+  $$ values ('00000000-0000-4000-8000-000000000b01', 'paid') $$, 'Finance marks it paid; the claimant''s id comes back, never their email');
 select results_eq($$ select allocated_cents from public.pool_totals where pool_id = '20000000-0000-4000-8000-000000000e03' $$,
   $$ values (0::bigint) $$, 'a budget with no amount yet still shows in the totals');
 select results_eq($$ select allocated_cents, pending_cents, approved_cents, paid_cents from public.pool_totals

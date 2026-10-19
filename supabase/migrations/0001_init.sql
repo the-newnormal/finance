@@ -94,11 +94,15 @@ create table public.claims (
   -- Set by decide_claim / mark_paid.
   rejection_reason text,
   payment_reference text,
+  -- A random id the claim form makes once per claim: a retried submission can't create a second
+  -- claim for the same expense (the unique index below refuses it).
+  submission_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check ((kind = 'invoice') = (vendor_name is not null)),
   check (kind = 'invoice' or due_date is null)
 );
+create unique index claims_submission_idx on public.claims (claimant_id, submission_id);
 create index claims_claimant_idx on public.claims (claimant_id, created_at desc);
 create index claims_status_idx on public.claims (status, created_at);
 create index claims_division_idx on public.claims (division_id, status);
@@ -335,10 +339,10 @@ create policy claim_events_select on public.claim_events for select to authentic
 revoke all on public.claims from authenticated;
 grant select (id, kind, status, claimant_id, claimant_name, division_id, pool_id, category_id,
   description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type,
-  payout_masked, rejection_reason, payment_reference, created_at, updated_at)
+  payout_masked, rejection_reason, payment_reference, submission_id, created_at, updated_at)
   on public.claims to authenticated;
 grant insert (kind, pool_id, category_id, description, amount_cents, expense_date, vendor_name,
-  due_date, attachment_paths, payout_type, payout_masked, payout_enc)
+  due_date, attachment_paths, payout_type, payout_masked, payout_enc, submission_id)
   on public.claims to authenticated;
 
 revoke all on public.claim_events from authenticated;
@@ -373,7 +377,8 @@ grant select on public.pool_totals to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
 -- The claim workflow. Each function checks the caller itself and logs to claim_events.
--- Returns what the server needs to e-mail the claimant.
+-- Returns what the server needs to tell the claimant, but never their email address: a reviewer
+-- may not read other members' rows, so the server looks the address up itself (src/lib/notify.ts).
 -- ---------------------------------------------------------------------------------------------
 
 -- Approve or reject a pending claim, at whichever stage it is:
@@ -381,7 +386,7 @@ grant select on public.pool_totals to authenticated;
 --                    Approving sends it to Finance.
 --   pending_finance: Finance or an admin. Only a member with the finance flag may decide their own.
 create function public.decide_claim(p_claim uuid, p_approve boolean, p_reason text default null)
-returns table (claimant_email text, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
+returns table (claimant_id uuid, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
 language plpgsql security definer set search_path = '' as $$
 declare
   v_me public.members;
@@ -434,14 +439,13 @@ begin
           case when p_approve then null else left(v_reason, 500) end);
 
   return query
-    select m.email, v_claim.claimant_name, v_claim.amount_cents, p.name, v_next
-    from public.members m, public.pools p
-    where m.id = v_claim.claimant_id and p.id = v_claim.pool_id;
+    select v_claim.claimant_id, v_claim.claimant_name, v_claim.amount_cents, p.name, v_next
+    from public.pools p where p.id = v_claim.pool_id;
 end $$;
 
 -- Record that Finance has paid an approved claim.
 create function public.mark_paid(p_claim uuid, p_reference text)
-returns table (claimant_email text, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
+returns table (claimant_id uuid, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
 language plpgsql security definer set search_path = '' as $$
 declare
   v_me public.members;
@@ -469,9 +473,8 @@ begin
   values (v_claim.id, v_me.id, v_me.name, 'paid', v_ref);
 
   return query
-    select m.email, v_claim.claimant_name, v_claim.amount_cents, p.name, 'paid'::public.claim_status
-    from public.members m, public.pools p
-    where m.id = v_claim.claimant_id and p.id = v_claim.pool_id;
+    select v_claim.claimant_id, v_claim.claimant_name, v_claim.amount_cents, p.name, 'paid'::public.claim_status
+    from public.pools p where p.id = v_claim.pool_id;
 end $$;
 
 -- The encrypted payout details of a claim Finance is deciding or paying. The server decrypts them
