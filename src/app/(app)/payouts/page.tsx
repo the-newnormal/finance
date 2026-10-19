@@ -12,8 +12,18 @@ export const metadata = { title: "Payouts" };
 export default async function PayoutsPage() {
   await requireFinance();
   const supabase = await createClient();
-  const { data } = await supabase.from("claims").select(ROW_COLUMNS).eq("status", "approved").order("created_at").limit(300);
-  const approved = await withNames(data ?? []);
+  const approvedRows: Parameters<typeof withNames>[0] = [];
+  for (let from = 0; ; from += 300) {
+    const { data } = await supabase
+      .from("claims")
+      .select(ROW_COLUMNS)
+      .eq("status", "approved")
+      .order("created_at")
+      .range(from, from + 299);
+    approvedRows.push(...(data ?? []));
+    if (!data || data.length < 300) break;
+  }
+  const approved = await withNames(approvedRows);
   const reimbursements = approved.filter((c) => c.kind === "reimbursement");
   const invoices = approved.filter((c) => c.kind === "invoice");
   const total = (cs: typeof approved) => formatSGD(cs.reduce((s, c) => s + c.amount_cents, 0));
