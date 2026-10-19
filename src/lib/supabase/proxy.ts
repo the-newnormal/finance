@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { safeNextPath } from "@/lib/auth/safe-next";
+import { DEFAULT_AFTER_LOGIN, safeNextPath } from "@/lib/auth/safe-next";
 import { supabaseEnv } from "./env";
 
 const PROTECTED_PREFIXES = ["/claims", "/review", "/budgets", "/payouts", "/admin"];
@@ -58,7 +58,9 @@ export async function updateSession(request: NextRequest) {
 
   // Already signed in: go where the login link was taking them (same-site paths only).
   if (signedIn && pathname === "/login") {
-    return redirectTo(new URL(safeNextPath(request.nextUrl.searchParams.get("next")), request.nextUrl.origin));
+    const target = new URL(safeNextPath(request.nextUrl.searchParams.get("next")), request.nextUrl.origin);
+    if (target.pathname === "/login") target.href = new URL(DEFAULT_AFTER_LOGIN, request.nextUrl.origin).href; // no loop
+    return redirectTo(target);
   }
 
   return response;
