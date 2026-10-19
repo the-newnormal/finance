@@ -100,7 +100,7 @@ export function BankManager({ accounts, entries, ledger, today }: {
         <Button variant="soft" onClick={() => setForm({ kind: "grant" })} disabled={!active.length}><Plus /> Grant / income</Button>
         <Button variant="outline" onClick={() => setForm({ kind: "adjustment" })} disabled={!active.length}>Adjustment</Button>
         <Button variant="outline" onClick={() => setForm({ kind: "transfer" })} disabled={active.length < 2}>Transfer between accounts</Button>
-        <Button variant="ghost" onClick={() => setForm({ kind: "account" })}>Add an account</Button>
+        <Button variant="outline" onClick={() => setForm({ kind: "account" })}><Plus /> Add an account</Button>
       </div>
 
       {form && <EntryForm key={JSON.stringify(form)} form={form} accounts={active} today={today} onDone={() => setForm(null)} />}
