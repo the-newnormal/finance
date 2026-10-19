@@ -17,6 +17,7 @@ export default async function BudgetsPage() {
     supabase.from("pool_totals").select("*").order("name"),
     supabase.from("divisions").select("id, name").order("name"),
   ]);
+  for (const r of [totals, divisions]) if (r.error) throw new Error(`budgets read failed: ${r.error.code}`);
   const pools = (totals.data ?? []) as PoolTotals[];
   const groups = ((divisions.data ?? []) as Division[])
     .map((d) => ({ division: d, pools: pools.filter((p) => p.division_id === d.id) }))

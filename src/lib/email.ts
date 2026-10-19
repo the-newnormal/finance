@@ -27,8 +27,9 @@ function getTransporter() {
 }
 
 export async function sendEmail(to: string, subject: string, paragraphs: string[], link?: { href: string; label: string }) {
-  const appUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const href = link ? (link.href.startsWith("http") ? link.href : appUrl + link.href) : null;
+  // Without the site's URL a relative link would be useless in an email, so leave the button out.
+  const appUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  const href = link ? (link.href.startsWith("http") ? link.href : appUrl ? appUrl + link.href : null) : null;
   const html = `
   <div style="font-family:Inter,Arial,sans-serif;color:#34363e;background:#f7f5f1;padding:32px">
     <div style="max-width:520px;margin:auto;background:#fff;border-radius:16px;padding:28px">
@@ -41,9 +42,10 @@ export async function sendEmail(to: string, subject: string, paragraphs: string[
 
   const t = getTransporter();
   if (!t) {
-    // Local development: print it, so the flow can be followed without SMTP. Never in production
-    // logs, which carry codes only (CLAUDE.md).
+    // Local development: print it, so the flow can be followed without SMTP. In production, log
+    // that mail isn't configured (a code only, CLAUDE.md), so missing notifications get noticed.
     if (process.env.NODE_ENV !== "production") console.info(`[email] to=${to} subject="${subject}"\n${text}`);
+    else console.error("email not sent", { code: "smtp_not_configured" });
     return;
   }
   try {

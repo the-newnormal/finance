@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fetchAll } from "@/lib/claims";
 import { csvCell } from "@/lib/csv";
 import { getMe } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -10,19 +11,28 @@ export async function GET() {
   if (!me?.member || !isFinance(me.member)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const supabase = await createClient();
-  const [claims, pools, categories, events] = await Promise.all([
-    supabase.from("claims").select("id, created_at, kind, status, claimant_name, pool_id, category_id, vendor_name, description, amount_cents, payout_type, payment_reference").order("created_at", { ascending: false }),
-    supabase.from("pools").select("id, name"),
-    supabase.from("categories").select("id, name"),
-    supabase.from("claim_events").select("claim_id, at").eq("action", "paid"),
-  ]);
-  const pool = new Map((pools.data ?? []).map((p) => [p.id, p.name]));
-  const cat = new Map((categories.data ?? []).map((c) => [c.id, c.name]));
-  const paidOn = new Map((events.data ?? []).map((e) => [e.claim_id, String(e.at).slice(0, 10)]));
+  let claims, pools, categories, events;
+  try {
+    // Every row, page by page; a failed read fails the export rather than dropping rows.
+    [claims, pools, categories, events] = await Promise.all([
+      fetchAll((from, to) => supabase.from("claims")
+        .select("id, created_at, kind, status, claimant_name, pool_id, category_id, vendor_name, description, amount_cents, payout_type, payment_reference")
+        .order("created_at", { ascending: false }).order("id").range(from, to)),
+      fetchAll((from, to) => supabase.from("pools").select("id, name").order("id").range(from, to)),
+      fetchAll((from, to) => supabase.from("categories").select("id, name").order("id").range(from, to)),
+      fetchAll((from, to) => supabase.from("claim_events").select("claim_id, at").eq("action", "paid").order("id").range(from, to)),
+    ]);
+  } catch (e) {
+    console.error("export failed", { code: e instanceof Error ? e.message : "unknown" });
+    return NextResponse.json({ error: "The export couldn't be built. Try again." }, { status: 500 });
+  }
+  const pool = new Map(pools.map((p) => [p.id, p.name]));
+  const cat = new Map(categories.map((c) => [c.id, c.name]));
+  const paidOn = new Map(events.map((e) => [e.claim_id, String(e.at).slice(0, 10)]));
 
   const rows = [
     ["id", "submitted", "kind", "status", "claimant", "budget", "category", "vendor", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
-    ...(claims.data ?? []).map((c) => [
+    ...claims.map((c) => [
       c.id, String(c.created_at).slice(0, 10), c.kind, c.status, c.claimant_name, pool.get(c.pool_id) ?? "", cat.get(c.category_id) ?? "",
       c.vendor_name ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type, paidOn.get(c.id) ?? "", c.payment_reference ?? "",
     ]),

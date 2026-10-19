@@ -2,7 +2,7 @@ import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ROW_COLUMNS, withNames } from "@/lib/claims";
+import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
 import { formatSGD } from "@/lib/money";
 import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -12,8 +12,9 @@ export const metadata = { title: "Payouts" };
 export default async function PayoutsPage() {
   await requireFinance();
   const supabase = await createClient();
-  const { data } = await supabase.from("claims").select(ROW_COLUMNS).eq("status", "approved").order("created_at").limit(300);
-  const approved = await withNames(data ?? []);
+  const approved = await withNames(await fetchAll((from, to) =>
+    supabase.from("claims").select(ROW_COLUMNS).eq("status", "approved").order("created_at").order("id").range(from, to),
+  ));
   const reimbursements = approved.filter((c) => c.kind === "reimbursement");
   const invoices = approved.filter((c) => c.kind === "invoice");
   const total = (cs: typeof approved) => formatSGD(cs.reduce((s, c) => s + c.amount_cents, 0));

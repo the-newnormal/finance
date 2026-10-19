@@ -147,7 +147,8 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                     </dl>
                   </>
                 )}
-                {may.markPaid && <MarkPaidForm claimId={claim.id} />}
+                {/* Only once Finance can see where the money goes. */}
+                {may.markPaid && !("error" in payout) && <MarkPaidForm claimId={claim.id} />}
               </CardContent>
             </Card>
           )}

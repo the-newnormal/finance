@@ -1,7 +1,7 @@
 import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ROW_COLUMNS, withNames } from "@/lib/claims";
+import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
 import { requireReviewer } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { isFinance } from "@/lib/types";
@@ -16,10 +16,12 @@ export default async function ReviewPage() {
   // RLS limits both lists to claims this person has purview over. Their own claims are left out
   // (nobody reviews their own; Finance members may finalise theirs, so those stay for them).
   const pending = (status: string) =>
-    supabase.from("claims").select(`${ROW_COLUMNS}, claimant_id`).eq("status", status).order("created_at").limit(200);
-  const [review, final] = await Promise.all([pending("pending_review"), finance ? pending("pending_finance") : null]);
-  const reviewQueue = await withNames((review.data ?? []).filter((c) => c.claimant_id !== me.id));
-  const financeQueue = await withNames((final?.data ?? []).filter((c) => c.claimant_id !== me.id || me.finance));
+    fetchAll((from, to) =>
+      supabase.from("claims").select(`${ROW_COLUMNS}, claimant_id`).eq("status", status).order("created_at").order("id").range(from, to),
+    );
+  const [review, final] = await Promise.all([pending("pending_review"), finance ? pending("pending_finance") : []]);
+  const reviewQueue = await withNames(review.filter((c) => c.claimant_id !== me.id));
+  const financeQueue = await withNames(final.filter((c) => c.claimant_id !== me.id || me.finance));
 
   return (
     <>

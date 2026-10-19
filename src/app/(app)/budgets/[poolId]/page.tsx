@@ -5,7 +5,7 @@ import { BudgetBar } from "@/components/budget-bar";
 import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ROW_COLUMNS, withNames } from "@/lib/claims";
+import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
 import { formatSGD } from "@/lib/money";
 import { requireReviewer } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -18,8 +18,9 @@ export default async function PoolPage({ params }: PageProps<"/budgets/[poolId]"
   const { data: pool } = await supabase.from("pool_totals").select("*").eq("pool_id", poolId).maybeSingle<PoolTotals>();
   if (!pool) notFound();
 
-  const { data } = await supabase.from("claims").select(ROW_COLUMNS).eq("pool_id", poolId).order("created_at", { ascending: false }).limit(500);
-  const claims = await withNames(data ?? []);
+  const claims = await withNames(await fetchAll((from, to) =>
+    supabase.from("claims").select(ROW_COLUMNS).eq("pool_id", poolId).order("created_at", { ascending: false }).order("id").range(from, to),
+  ));
   const byCategory = new Map<string, number>();
   for (const c of claims) {
     if (c.status === "approved" || c.status === "paid") byCategory.set(c.categoryName, (byCategory.get(c.categoryName) ?? 0) + c.amount_cents);
