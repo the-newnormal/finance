@@ -14,8 +14,8 @@ const TARGET = "src/lib/supabase/admin";
 const ALLOWED = new Set([
   "src/lib/supabase/admin.ts",
   "src/lib/supabase/admin-imports.test.ts",
-  "src/app/admin/people/actions.ts", // inviteMember, setActive
-  "src/app/admin/people/actions.test.ts",
+  "src/app/(app)/admin/people/actions.ts", // inviteMember, setActive
+  "src/app/(app)/admin/people/actions.test.ts",
 ]);
 
 const SOURCE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
