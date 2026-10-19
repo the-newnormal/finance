@@ -47,10 +47,9 @@ export async function sendEmail(to: string, subject: string, paragraphs: string[
 
   const t = getTransporter();
   if (!t) {
-    // Local development: print it, so the flow can be followed without SMTP. In production, log
-    // that mail isn't configured (a code only, CLAUDE.md), so missing notifications get noticed.
-    if (process.env.NODE_ENV !== "production") console.info(`[email] to=${to} subject="${subject}"\n${text}`);
-    else console.error("email not sent", { code: "smtp_not_configured" });
+    // Logs carry codes only (CLAUDE.md), so the email itself is never printed. Locally, use Mailpit
+    // or set SMTP_* to see real ones.
+    console.error("email not sent", { code: "smtp_not_configured" });
     return;
   }
   try {
