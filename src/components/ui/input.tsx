@@ -22,12 +22,34 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
   return <label className={cn("text-sm font-medium text-ink", className)} {...props} />;
 }
 
-export function Field({ label, hint, children, className }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("grid gap-1.5", className)}>
-      <Label>{label}</Label>
+// A label and its control. The label wraps the control, so screen readers name it and clicking the
+// label focuses it. For several controls under one heading (radios, toggle buttons), pass `group`:
+// a fieldset whose legend names them all.
+export function Field({ label, hint, children, className, group }: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+  className?: string;
+  group?: boolean;
+}) {
+  const body = (
+    <>
+      {hint && <span className="order-last text-xs text-ink-soft">{hint}</span>}
       {children}
-      {hint && <p className="text-xs text-ink-soft">{hint}</p>}
-    </div>
+    </>
+  );
+  if (group) {
+    return (
+      <fieldset className={cn("grid gap-1.5", className)}>
+        <legend className="mb-1.5 text-sm font-medium text-ink">{label}</legend>
+        {body}
+      </fieldset>
+    );
+  }
+  return (
+    <label className={cn("grid gap-1.5", className)}>
+      <span className="text-sm font-medium text-ink">{label}</span>
+      {body}
+    </label>
   );
 }
