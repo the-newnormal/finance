@@ -26,7 +26,7 @@ const payout = z.discriminatedUnion("type", [
 
 const claimInput = z.object({
   kind: z.enum(["reimbursement", "invoice"]),
-  poolId: z.uuid("Choose an event or budget"),
+  budgetId: z.uuid("Choose a budget"),
   categoryId: z.uuid("Choose a category"),
   description: z.string().trim().min(3, "Add a short description").max(500),
   amount: z.string(),
@@ -106,7 +106,7 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
     .from("claims")
     .insert({
       kind: v.kind,
-      pool_id: v.poolId,
+      budget_id: v.budgetId,
       category_id: v.categoryId,
       description: v.description,
       amount_cents,

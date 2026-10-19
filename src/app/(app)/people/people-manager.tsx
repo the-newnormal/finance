@@ -8,28 +8,28 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
-import type { Division, Role } from "@/lib/types";
+import { ROLE_LABEL, type Division, type Role } from "@/lib/types";
 
-type U = { id: string; name: string; email: string; role: Role; finance: boolean; divisionIds: string[]; active: boolean };
+type U = { id: string; name: string; email: string; role: Role; divisionIds: string[]; active: boolean };
 
 const ROLE_HELP: Record<Role, string> = {
   volunteer: "Submits claims and sees only their own.",
-  core: "Also reviews claims and sees budgets for their divisions; can submit vendor invoices.",
-  admin: "Full access, including people, setup and all financial data.",
+  lead: "Also reviews volunteers' claims and sees budgets for the divisions they lead; can submit vendor invoices.",
+  finance: "Full access: final approval, payouts, bank accounts, people and setup.",
 };
 
-function AccessFields({ value, onChange, divisions }: { value: Pick<U, "role" | "finance" | "divisionIds">; onChange: (v: Pick<U, "role" | "finance" | "divisionIds">) => void; divisions: Division[] }) {
+function AccessFields({ value, onChange, divisions }: { value: Pick<U, "role" | "divisionIds">; onChange: (v: Pick<U, "role" | "divisionIds">) => void; divisions: Division[] }) {
   return (
     <>
       <Field label="Role" hint={ROLE_HELP[value.role]}>
         <Select value={value.role} onChange={(e) => onChange({ ...value, role: e.target.value as Role })}>
           <option value="volunteer">Volunteer</option>
-          <option value="core">Core personnel</option>
-          <option value="admin">Admin</option>
+          <option value="lead">Division lead</option>
+          <option value="finance">Finance</option>
         </Select>
       </Field>
-      {value.role !== "volunteer" && (
-        <Field label="Divisions" group>
+      {value.role === "lead" && (
+        <Field label="Divisions they lead" hint={value.divisionIds.length ? undefined : "Choose at least one."} group>
           <div className="flex flex-wrap gap-2">
             {divisions.map((d) => {
               const on = value.divisionIds.includes(d.id);
@@ -44,10 +44,6 @@ function AccessFields({ value, onChange, divisions }: { value: Pick<U, "role" | 
           </div>
         </Field>
       )}
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" className="mt-0.5 accent-brand-deep" checked={value.finance} onChange={(e) => onChange({ ...value, finance: e.target.checked })} />
-        <span><strong>Finance team</strong><br /><span className="text-xs text-ink-soft">Final approval on all claims, sees all budgets, processes payouts. May approve their own claims.</span></span>
-      </label>
     </>
   );
 }
@@ -56,7 +52,7 @@ export function PeopleManager({ people: users, divisions, meId }: { people: U[];
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ tone: "error" | "success"; text: string } | null>(null);
-  const [draft, setDraft] = useState({ name: "", email: "", role: "volunteer" as Role, finance: false, divisionIds: [] as string[] });
+  const [draft, setDraft] = useState({ name: "", email: "", role: "volunteer" as Role, divisionIds: [] as string[] });
   const [editing, setEditing] = useState<U | null>(null);
   const [q, setQ] = useState("");
 
@@ -86,12 +82,11 @@ export function PeopleManager({ people: users, divisions, meId }: { people: U[];
                   <div className="font-medium">{u.name}</div>
                   <div className="text-xs text-ink-soft">{u.email}</div>
                 </div>
-                <Badge className="bg-lavender/50 capitalize">{u.role}</Badge>
-                {u.finance && <Badge className="bg-yellow/60">Finance</Badge>}
+                <Badge className={u.role === "finance" ? "bg-yellow/60" : "bg-lavender/50"}>{ROLE_LABEL[u.role]}</Badge>
                 {!u.active && <Badge className="bg-ink/10">Deactivated</Badge>}
                 <Button size="sm" variant="outline" onClick={() => setEditing(editing?.id === u.id ? null : u)}>Edit</Button>
               </div>
-              {u.divisionIds.length > 0 && <div className="mt-1 text-xs text-ink-soft">{u.divisionIds.map(divName).join(", ")}</div>}
+              {u.role === "lead" && u.divisionIds.length > 0 && <div className="mt-1 text-xs text-ink-soft">{u.divisionIds.map(divName).join(", ")}</div>}
               {editing?.id === u.id && (
                 <div className="mt-3 grid gap-4 border-t border-line pt-3">
                   <AccessFields value={editing} onChange={(v) => setEditing({ ...editing, ...v })} divisions={divisions} />
@@ -121,7 +116,7 @@ export function PeopleManager({ people: users, divisions, meId }: { people: U[];
           <form className="grid gap-4" onSubmit={(e) => {
             e.preventDefault();
             run(() => inviteMember(draft), `Account created for ${draft.email}. They've been emailed a sign-in link.`,
-              () => setDraft({ name: "", email: "", role: "volunteer", finance: false, divisionIds: [] }));
+              () => setDraft({ name: "", email: "", role: "volunteer", divisionIds: [] }));
           }}>
             <Field label="Full name"><Input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></Field>
             <Field label="E-mail"><Input type="email" required value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} /></Field>

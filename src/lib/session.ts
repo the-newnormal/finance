@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { canReview, isAdmin, isFinance, type Member } from "@/lib/types";
+import { canReview, isFinance, type Member } from "@/lib/types";
 
 // The signed-in person's member row, read as them (RLS: their own row only). null when signed out,
 // or when they have a login but no active member row. Page guards here only decide what to show;
@@ -14,7 +14,7 @@ export const getMe = cache(async (): Promise<{ user: true; member: Member | null
   if (!uid) return null;
   const { data: member, error } = await supabase
     .from("members")
-    .select("id, email, name, role, finance, active")
+    .select("id, email, name, role, active")
     .eq("id", uid)
     .maybeSingle<Member>();
   // A failed read shows the error page (with retry), never the "not active" page.
@@ -38,11 +38,5 @@ export async function requireReviewer() {
 export async function requireFinance() {
   const me = await requireMember();
   if (!isFinance(me)) redirect("/claims");
-  return me;
-}
-
-export async function requireAdmin() {
-  const me = await requireMember();
-  if (!isAdmin(me)) redirect("/claims");
   return me;
 }

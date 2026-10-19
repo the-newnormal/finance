@@ -1,7 +1,7 @@
-// Row shapes as the app reads them (see supabase/migrations/0001_init.sql). Money is in cents.
+// Row shapes as the app reads them (see supabase/migrations/). Money is in cents.
 
-export type Role = "volunteer" | "core" | "admin";
-export type PoolKind = "event" | "general";
+export type Role = "volunteer" | "lead" | "finance";
+export type BudgetKind = "event" | "general";
 export type ClaimKind = "reimbursement" | "invoice";
 export type ClaimStatus = "pending_review" | "pending_finance" | "approved" | "rejected" | "paid";
 export type PayoutType = "paynow_mobile" | "paynow_uen" | "bank";
@@ -11,7 +11,6 @@ export interface Member {
   email: string;
   name: string;
   role: Role;
-  finance: boolean;
   active: boolean;
 }
 
@@ -26,21 +25,33 @@ export interface Category {
   active: boolean;
 }
 
-export interface Pool {
+export interface Budget {
   id: string;
   name: string;
-  kind: PoolKind;
+  kind: BudgetKind;
   division_id: string;
   active: boolean;
 }
 
-export interface PoolTotals {
-  pool_id: string;
+/** budget_totals: one row per budget in the viewer's purview. */
+export interface BudgetTotals {
+  budget_id: string;
   name: string;
-  kind: PoolKind;
+  kind: BudgetKind;
   division_id: string;
   active: boolean;
-  allocated_cents: number;
+  guideline_cents: number;
+  pending_cents: number;
+  approved_cents: number;
+  paid_cents: number;
+}
+
+/** guideline_totals: spending against one provisioned category of one budget. */
+export interface GuidelineTotals {
+  budget_id: string;
+  category_id: string;
+  category_name: string;
+  guideline_cents: number;
   pending_cents: number;
   approved_cents: number;
   paid_cents: number;
@@ -53,7 +64,7 @@ export interface Claim {
   claimant_id: string;
   claimant_name: string;
   division_id: string;
-  pool_id: string;
+  budget_id: string;
   category_id: string;
   description: string;
   amount_cents: number;
@@ -71,7 +82,7 @@ export interface Claim {
 
 /** Every claims column the Data API may read (payout_enc is never granted). */
 export const CLAIM_COLUMNS =
-  "id, kind, status, claimant_id, claimant_name, division_id, pool_id, category_id, description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type, payout_masked, rejection_reason, payment_reference, created_at, updated_at";
+  "id, kind, status, claimant_id, claimant_name, division_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type, payout_masked, rejection_reason, payment_reference, created_at, updated_at";
 
 export interface ClaimEvent {
   id: number;
@@ -96,8 +107,15 @@ export const PAYOUT_LABEL: Record<PayoutType, string> = {
   bank: "Bank transfer",
 };
 
-/** Finance and admins see everything and process payouts (private.is_finance()). */
-export const isFinance = (m: Pick<Member, "role" | "finance">) => m.finance || m.role === "admin";
-export const isAdmin = (m: Pick<Member, "role">) => m.role === "admin";
+export const ROLE_LABEL: Record<Role, string> = {
+  volunteer: "Volunteer",
+  lead: "Division lead",
+  finance: "Finance",
+};
+
+/** Finance sees everything, gives final approval, pays, and sets everything up (private.is_finance()). */
+export const isFinance = (m: Pick<Member, "role">) => m.role === "finance";
 /** Who gets the Review and Budgets pages. The database decides what they see there. */
-export const canReview = (m: Pick<Member, "role" | "finance">) => m.role !== "volunteer" || m.finance;
+export const canReview = (m: Pick<Member, "role">) => m.role !== "volunteer";
+/** Vendor invoices: leads and Finance. */
+export const canInvoice = canReview;

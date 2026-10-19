@@ -6,7 +6,7 @@ import { submitClaim, type ClaimInput } from "./actions";
 
 const ME = "00000000-0000-4000-8000-000000000001";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: ME, role: "volunteer", finance: false })) }));
+vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: ME, role: "volunteer" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 function table(result: { data?: unknown; error: unknown }) {
@@ -32,7 +32,7 @@ afterEach(() => {
 
 const base: ClaimInput = {
   kind: "reimbursement",
-  poolId: "20000000-0000-4000-8000-000000000001",
+  budgetId: "20000000-0000-4000-8000-000000000001",
   categoryId: "30000000-0000-4000-8000-000000000001",
   description: "Taxi to the venue",
   amount: "25.40",

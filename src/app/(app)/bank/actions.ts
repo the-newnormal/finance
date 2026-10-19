@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export type BankResult = { ok: true } | { ok: false; error: string };
 
-// Every write goes through a database function that checks the caller is Finance or an admin and
+// Every write goes through a database function that checks the caller is Finance and
 // stamps who did it (supabase/migrations/0002_bank_accounts.sql). Logs carry codes only.
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a date");

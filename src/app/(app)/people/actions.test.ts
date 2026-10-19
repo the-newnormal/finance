@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { inviteMember, updateMember } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/session", () => ({ requireAdmin: vi.fn().mockResolvedValue({ id: "admin" }) }));
+vi.mock("@/lib/session", () => ({ requireFinance: vi.fn().mockResolvedValue({ id: "finance" }) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", async (importActual) => ({
   ...(await importActual<typeof import("@/lib/supabase/admin")>()),
@@ -47,16 +47,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const person = { name: " Mei Tan ", email: " Mei@Example.COM ", role: "core" as const, finance: false, divisionIds: [DIV] };
+const person = { name: " Mei Tan ", email: " Mei@Example.COM ", role: "lead" as const, divisionIds: [DIV] };
 
 describe("inviteMember", () => {
-  it("invites the normalised email, then adds the member and divisions in one call as the admin", async () => {
+  it("invites the normalised email, then adds the member and divisions in one call as Finance", async () => {
     expect(await inviteMember(person)).toEqual({ ok: true });
     expect(auth.inviteUserByEmail).toHaveBeenCalledWith("mei@example.com", {
       redirectTo: "https://finance.test/auth/callback?next=/claims",
     });
-    expect(rpc).toHaveBeenCalledWith("admin_add_member", {
-      p_id: USER, p_email: "mei@example.com", p_name: "Mei Tan", p_role: "core", p_finance: false, p_divisions: [DIV],
+    expect(rpc).toHaveBeenCalledWith("add_member", {
+      p_id: USER, p_email: "mei@example.com", p_name: "Mei Tan", p_role: "lead", p_divisions: [DIV],
     });
   });
 
@@ -101,6 +101,16 @@ describe("inviteMember", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("requires a division lead to lead at least one division", async () => {
+    expect(await inviteMember({ ...person, divisionIds: [] })).toEqual({ ok: false, error: "Choose at least one division for a division lead." });
+    expect(auth.inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("drops divisions sent for a role that doesn't lead any", async () => {
+    await inviteMember({ ...person, role: "finance" });
+    expect(rpc).toHaveBeenCalledWith("add_member", expect.objectContaining({ p_role: "finance", p_divisions: [] }));
+  });
+
   it("refuses invalid input before inviting anyone", async () => {
     expect(await inviteMember({ ...person, email: "nope" })).toEqual({ ok: false, error: "Enter a valid email" });
     expect(auth.inviteUserByEmail).not.toHaveBeenCalled();
@@ -116,12 +126,12 @@ describe("inviteMember", () => {
 });
 
 describe("updateMember", () => {
-  const access = { role: "volunteer" as const, finance: false, divisionIds: [], active: false };
+  const access = { role: "volunteer" as const, divisionIds: [], active: false };
 
   it("saves access in one call, then bans a deactivated login", async () => {
     expect(await updateMember(USER, access)).toEqual({ ok: true });
-    expect(rpc).toHaveBeenCalledWith("admin_update_member", {
-      p_id: USER, p_role: "volunteer", p_finance: false, p_active: false, p_divisions: [],
+    expect(rpc).toHaveBeenCalledWith("update_member", {
+      p_id: USER, p_role: "volunteer", p_active: false, p_divisions: [],
     });
     expect(auth.updateUserById).toHaveBeenCalledWith(USER, { ban_duration: "876000h" });
   });
@@ -133,7 +143,7 @@ describe("updateMember", () => {
   });
 
   it("bans to match what's saved now, not what this request sent", async () => {
-    savedActive = true; // another admin reactivated them meanwhile
+    savedActive = true; // another Finance member reactivated them meanwhile
     await updateMember(USER, access);
     expect(auth.updateUserById).toHaveBeenCalledWith(USER, { ban_duration: "none" });
   });
@@ -143,6 +153,11 @@ describe("updateMember", () => {
     expect(await updateMember(USER, access)).toEqual({
       ok: false, error: "Saved, but their sign-in couldn't be updated. Save again to retry.",
     });
+  });
+
+  it("refuses a lead with no divisions before saving", async () => {
+    expect(await updateMember(USER, { ...access, role: "lead" })).toEqual({ ok: false, error: "Choose at least one division for a division lead." });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("explains the database's refusal to change your own access", async () => {
