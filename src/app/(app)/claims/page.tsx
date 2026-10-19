@@ -4,7 +4,7 @@ import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ROW_COLUMNS, withNames } from "@/lib/claims";
+import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
 import { formatSGD } from "@/lib/money";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -15,20 +15,23 @@ export default async function MyClaimsPage() {
   const me = await requireMember();
   const supabase = await createClient();
   // Filter by claimant: RLS would also hand reviewers their division's claims.
-  const { data } = await supabase
-    .from("claims")
-    .select(ROW_COLUMNS)
-    .eq("claimant_id", me.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  const claims = await withNames(data ?? []);
+  const rows = await fetchAll((from, to) =>
+    supabase
+      .from("claims")
+      .select(ROW_COLUMNS)
+      .eq("claimant_id", me.id)
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(from, to),
+  );
+  const claims = await withNames(rows);
 
   const sum = (pred: (c: (typeof claims)[number]) => boolean) => {
     const cs = claims.filter(pred);
     return { total: formatSGD(cs.reduce((s, c) => s + c.amount_cents, 0)), count: cs.length };
   };
   const pending = sum((c) => c.status === "pending_review" || c.status === "pending_finance");
-  const toBePaid = sum((c) => c.status === "approved" && c.kind === "reimbursement");
+  const toBePaid = sum((c) => c.status === "approved");
   const paid = sum((c) => c.status === "paid" && c.kind === "reimbursement");
 
   return (

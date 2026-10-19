@@ -8,6 +8,9 @@ import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 
+// claims.amount_cents's limit in the database.
+const MAX_CLAIM_CENTS = 100_000_000;
+
 export type SubmitResult = { ok: true; id: string } | { ok: false; error: string };
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal(""));
@@ -61,6 +64,7 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
 
   const amount_cents = parseAmountToCents(v.amount);
   if (!amount_cents) return { ok: false, error: "Enter a valid amount, e.g. 42.50." };
+  if (amount_cents > MAX_CLAIM_CENTS) return { ok: false, error: "A single claim can be at most $1,000,000." };
   if (v.kind === "invoice" && !v.vendorName) return { ok: false, error: "Enter the vendor's name." };
 
   const supabase = await createClient();

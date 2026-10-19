@@ -7,6 +7,23 @@ export const ROW_COLUMNS = "id, kind, status, claimant_name, description, amount
 
 type Raw = Pick<Claim, "id" | "kind" | "status" | "claimant_name" | "description" | "amount_cents" | "vendor_name" | "created_at" | "pool_id" | "category_id">;
 
+type Page<T> = PromiseLike<{ data: T[] | null; error: { code?: string } | null }>;
+
+/**
+ * Every row a query returns, read 1,000 at a time (the API's per-request cap), so lists and totals
+ * are never silently cut short. `page(from, to)` must order by a unique key. A failed read throws.
+ */
+export async function fetchAll<T>(page: (from: number, to: number) => Page<T>): Promise<T[]> {
+  const size = 1000;
+  const rows: T[] = [];
+  for (let from = 0; ; from += size) {
+    const { data, error } = await page(from, from + size - 1);
+    if (error) throw new Error(`read failed: ${error.code ?? "unknown"}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < size) return rows;
+  }
+}
+
 /** Adds pool and category names to claim rows, for ClaimsTable. */
 export async function withNames(rows: Raw[]): Promise<ClaimRow[]> {
   if (!rows.length) return [];

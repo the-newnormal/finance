@@ -69,6 +69,11 @@ describe("normalisers", () => {
   it.each(["6123 4567", "912345", "+1 415 555 0100"])("rejects mobile %j", (input) => {
     expect(normaliseSgMobile(input)).toBeNull();
   });
-  it("accepts a UEN and upper-cases it", () => expect(normaliseUen(" 201912345k ")).toBe("201912345K"));
-  it("rejects a short UEN", () => expect(normaliseUen("1234")).toBeNull());
+  it.each([[" 201912345k ", "201912345K"], ["53312345D", "53312345D"], ["T08LL1234A", "T08LL1234A"]])(
+    "accepts UEN %j",
+    (input, out) => expect(normaliseUen(input)).toBe(out),
+  );
+  it.each(["1234", "123456789", "2019123456", "X08LL1234A", "T08L11234A"])("rejects UEN %j", (input) => {
+    expect(normaliseUen(input)).toBeNull();
+  });
 });

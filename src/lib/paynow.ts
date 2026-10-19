@@ -23,10 +23,13 @@ function clean(s: string, max: number) {
   return s.normalize("NFKD").replace(/[^\x20-\x7E]/g, "").trim().slice(0, max);
 }
 
-/** A Singapore UEN: 9 or 10 letters and digits. */
+// Singapore UEN formats: businesses (8 digits + letter), local companies (year + 5 digits +
+// letter), and other entities (T/S/R + 2-digit year + 2-letter entity type + 4 digits + letter).
+const UEN = /^(\d{8}[A-Z]|\d{9}[A-Z]|[TSR]\d{2}[A-Z]{2}\d{4}[A-Z])$/;
+
 export function normaliseUen(input: string): string | null {
   const uen = input.replace(/\s/g, "").toUpperCase();
-  return /^[0-9A-Z]{9,10}$/.test(uen) ? uen : null;
+  return UEN.test(uen) ? uen : null;
 }
 
 export function normaliseSgMobile(input: string): string | null {

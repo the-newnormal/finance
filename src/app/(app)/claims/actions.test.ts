@@ -82,3 +82,9 @@ describe("submitClaim", () => {
     expect((await submitClaim({ ...base, amount })).ok).toBe(false);
   });
 });
+
+describe("submitClaim limits", () => {
+  it("explains the maximum amount", async () => {
+    expect(await submitClaim({ ...base, amount: "1000000.01" })).toEqual({ ok: false, error: "A single claim can be at most $1,000,000." });
+  });
+});

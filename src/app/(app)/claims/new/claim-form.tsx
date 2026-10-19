@@ -23,11 +23,17 @@ type Props = {
 
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
+// The types the receipts bucket accepts (supabase/migrations/0001_init.sql).
+const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
+
+// A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
+type Attachment = { file: File; path?: string };
 
 export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categories, savedPayout }: Props) {
   const router = useRouter();
   const [kind, setKind] = useState<"reimbursement" | "invoice">("reimbursement");
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [folder] = useState(() => `${uid}/${crypto.randomUUID()}`);
   const [payoutType, setPayoutType] = useState<PayoutType | "saved">(savedPayout ? "saved" : "paynow_mobile");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,11 +45,18 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
     if (!list) return;
     const next = [...files];
     for (const f of Array.from(list)) {
-      if (!(f.type.startsWith("image/") || f.type === "application/pdf")) { setError(`${f.name} isn't an image or PDF.`); continue; }
+      if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
       if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
-      if (next.length < MAX_FILES) next.push(f);
+      if (next.length < MAX_FILES) next.push({ file: f });
     }
     setFiles(next);
+  }
+
+  // Removing an uploaded file deletes it too (allowed while no claim attaches it).
+  function removeFile(i: number) {
+    const gone = files[i];
+    setFiles(files.filter((_, j) => j !== i));
+    if (gone.path) void createClient().storage.from("receipts").remove([gone.path]);
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -54,18 +67,23 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
     const s = (k: string) => String(fd.get(k) ?? "");
     setBusy(true);
     try {
-      // Straight into the private receipts bucket, in this member's own folder (storage RLS).
+      // Straight into the private receipts bucket, in this member's own folder (storage RLS). Files
+      // already uploaded by an earlier attempt are reused, not uploaded again.
       const storage = createClient().storage.from("receipts");
-      const folder = `${uid}/${crypto.randomUUID()}`;
-      const attachmentPaths = await Promise.all(
-        files.map(async (f, i) => {
-          const safe = f.name.replace(/[^\w.-]+/g, "_").slice(-80);
-          const path = `${folder}/${i}-${safe}`;
-          const { error } = await storage.upload(path, f, { contentType: f.type, upsert: false });
-          if (error) throw error;
-          return path;
-        }),
-      );
+      const uploaded: Attachment[] = [];
+      for (const a of files) {
+        if (a.path) { uploaded.push(a); continue; }
+        const safe = a.file.name.replace(/[^\w.-]+/g, "_").slice(-80);
+        const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
+        const { error } = await storage.upload(path, a.file, { contentType: a.file.type, upsert: false });
+        if (error) {
+          setFiles([...uploaded, ...files.slice(uploaded.length)]);
+          throw error;
+        }
+        uploaded.push({ ...a, path });
+      }
+      setFiles(uploaded);
+      const attachmentPaths = uploaded.map((a) => a.path!);
 
       const payout: ClaimInput["payout"] =
         effectivePayout === "saved" ? { type: "saved" }
@@ -162,13 +180,13 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
               <Paperclip className="size-5 text-brand-deep" />
               <span className="font-medium">Tap to add files</span>
               <span className="text-xs text-ink-soft">or take a photo</span>
-              <input type="file" accept="image/*,application/pdf" multiple className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              <input type="file" accept={ACCEPTED.join(",")} multiple className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             </label>
-            {files.map((f, i) => (
+            {files.map(({ file: f }, i) => (
               <div key={i} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">
                 <FileText className="size-4 text-ink-soft" />
                 <span className="flex-1 truncate">{f.name}</span>
-                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}><X className="size-4" /></button>
+                <button type="button" aria-label={`Remove ${f.name}`} onClick={() => removeFile(i)}><X className="size-4" /></button>
               </div>
             ))}
           </CardContent>
@@ -209,7 +227,7 @@ export function ClaimForm({ uid, canInvoice, goesStraightToFinance, pools, categ
                 ) : (
                   <Field label={effectivePayout === "paynow_mobile" ? "PayNow mobile number" : "UEN"}
                     hint={effectivePayout === "paynow_mobile" ? "Singapore number, e.g. 9123 4567" : undefined}>
-                    <Input name="proxy" required inputMode={effectivePayout === "paynow_mobile" ? "tel" : "text"} autoComplete="off" />
+                    <Input key={effectivePayout} name="proxy" required inputMode={effectivePayout === "paynow_mobile" ? "tel" : "text"} autoComplete="off" />
                   </Field>
                 )}
                 {!isInvoice && (
