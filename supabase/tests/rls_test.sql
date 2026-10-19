@@ -1,5 +1,6 @@
 -- Who can read and write what, and the claim workflow, through the Data API and Storage.
--- Run: pnpm supabase test db. Builds its own fixtures inside the transaction and rolls back.
+-- Run: pnpm supabase test db. Builds its own fixtures inside the transaction and rolls back, and
+-- works with or without seed.sql (names start with "RLS").
 --
 -- Fixtures:
 --   division D1: core member c1        division D2: core member c2
@@ -48,17 +49,17 @@ insert into public.division_members (member_id, division_id) values
   ('00000000-0000-4000-8000-000000000c02', '10000000-0000-4000-8000-000000000d02');
 
 insert into public.pools (id, name, division_id, active) values
-  ('20000000-0000-4000-8000-000000000e01', 'Pool One', '10000000-0000-4000-8000-000000000d01', true),
-  ('20000000-0000-4000-8000-000000000e02', 'Pool Two', '10000000-0000-4000-8000-000000000d02', true),
-  ('20000000-0000-4000-8000-000000000e03', 'Pool Closed', '10000000-0000-4000-8000-000000000d01', false);
+  ('20000000-0000-4000-8000-000000000e01', 'RLS Pool One', '10000000-0000-4000-8000-000000000d01', true),
+  ('20000000-0000-4000-8000-000000000e02', 'RLS Pool Two', '10000000-0000-4000-8000-000000000d02', true),
+  ('20000000-0000-4000-8000-000000000e03', 'RLS Pool Closed', '10000000-0000-4000-8000-000000000d01', false);
 
 insert into public.pool_budgets (pool_id, allocated_cents) values
   ('20000000-0000-4000-8000-000000000e01', 100000),
   ('20000000-0000-4000-8000-000000000e02', 50000);
 
 insert into public.categories (id, name, active) values
-  ('30000000-0000-4000-8000-000000000001', 'Transport', true),
-  ('30000000-0000-4000-8000-000000000002', 'Hidden', false);
+  ('30000000-0000-4000-8000-000000000001', 'RLS Transport', true),
+  ('30000000-0000-4000-8000-000000000002', 'RLS Hidden', false);
 
 -- ---------- signed out ----------
 set local role anon;
@@ -123,7 +124,7 @@ select throws_ok($$ select * from public.claim_payout_enc(pg_temp.claim('v1 taxi
 
 select is_empty($$ select * from public.pool_budgets $$, 'volunteers see no budget amounts');
 select is_empty($$ select * from public.pool_totals $$, 'volunteers see no budget totals');
-select results_eq($$ select count(*)::int from public.pools $$, $$ values (3) $$, 'volunteers see pool names');
+select results_eq($$ select count(*)::int from public.pools where name like 'RLS %' $$, $$ values (3) $$, 'volunteers see pool names');
 select results_eq($$ select count(*)::int from public.members $$, $$ values (1) $$, 'volunteers see only themselves');
 
 update public.members set role = 'admin' where id = '00000000-0000-4000-8000-000000000b01';
