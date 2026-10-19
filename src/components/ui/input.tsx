@@ -24,7 +24,8 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
 
 // A label and its control. The label wraps the control, so screen readers name it and clicking the
 // label focuses it. For several controls under one heading (radios, toggle buttons), pass `group`:
-// a fieldset whose legend names them all.
+// a fieldset whose legend names them all. content-start keeps label and control at the top when a
+// neighbouring field in the same row is taller (e.g. has a hint), so inputs line up across columns.
 export function Field({ label, hint, children, className, group }: {
   label: string;
   hint?: string;
@@ -40,14 +41,14 @@ export function Field({ label, hint, children, className, group }: {
   );
   if (group) {
     return (
-      <fieldset className={cn("grid gap-1.5", className)}>
+      <fieldset className={cn("grid content-start gap-1.5", className)}>
         <legend className="mb-1.5 text-sm font-medium text-ink">{label}</legend>
         {body}
       </fieldset>
     );
   }
   return (
-    <label className={cn("grid gap-1.5", className)}>
+    <label className={cn("grid content-start gap-1.5", className)}>
       <span className="text-sm font-medium text-ink">{label}</span>
       {body}
     </label>
