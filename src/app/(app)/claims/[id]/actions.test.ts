@@ -7,6 +7,8 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: "me" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/email", () => ({ sendEmail: vi.fn() }));
+// after() schedules work for once the response is sent; here, run it straight away.
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
 const ID = "40000000-0000-4000-8000-000000000001";
 const outcome = { claimant_email: "v@test.local", claimant_name: "Vol One", amount_cents: 2500, pool_name: "Iftar" };
@@ -57,6 +59,11 @@ describe("decideClaim", () => {
   it("hides unexpected errors", async () => {
     returns({ error: { code: "XX000", message: "internal" } });
     expect(await decideClaim(ID, true)).toEqual({ ok: false, error: "Something went wrong. Try again." });
+  });
+
+  it("refuses a reason over 500 characters (the database keeps 500)", async () => {
+    expect(await decideClaim(ID, false, "x".repeat(501))).toEqual({ ok: false, error: "Keep the reason under 500 characters." });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("refuses a malformed id without calling the database", async () => {

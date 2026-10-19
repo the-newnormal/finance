@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchAll } from "@/lib/claims";
 import { csvCell } from "@/lib/csv";
+import { singaporeDate } from "@/lib/dates";
 import { getMe } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { isFinance } from "@/lib/types";
@@ -16,8 +17,8 @@ export async function GET() {
     // Every row, page by page; a failed read fails the export rather than dropping rows.
     [claims, pools, categories, events] = await Promise.all([
       fetchAll((from, to) => supabase.from("claims")
-        .select("id, created_at, kind, status, claimant_name, pool_id, category_id, vendor_name, description, amount_cents, payout_type, payment_reference")
-        .order("created_at", { ascending: false }).order("id").range(from, to)),
+        .select("id, created_at, kind, status, claimant_name, pool_id, category_id, expense_date, vendor_name, due_date, description, amount_cents, payout_type, payment_reference")
+        .order("created_at").order("id").range(from, to)),
       fetchAll((from, to) => supabase.from("pools").select("id, name").order("id").range(from, to)),
       fetchAll((from, to) => supabase.from("categories").select("id, name").order("id").range(from, to)),
       fetchAll((from, to) => supabase.from("claim_events").select("claim_id, at").eq("action", "paid").order("id").range(from, to)),
@@ -28,13 +29,15 @@ export async function GET() {
   }
   const pool = new Map(pools.map((p) => [p.id, p.name]));
   const cat = new Map(categories.map((c) => [c.id, c.name]));
-  const paidOn = new Map(events.map((e) => [e.claim_id, String(e.at).slice(0, 10)]));
+  const paidOn = new Map(events.map((e) => [e.claim_id, singaporeDate(e.at)]));
+  claims.reverse(); // newest first
 
   const rows = [
-    ["id", "submitted", "kind", "status", "claimant", "budget", "category", "vendor", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
+    // Dates are Singapore calendar dates, as the portal shows them.
+    ["id", "submitted", "kind", "status", "claimant", "budget", "category", "purchase_date", "vendor", "due_date", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
     ...claims.map((c) => [
-      c.id, String(c.created_at).slice(0, 10), c.kind, c.status, c.claimant_name, pool.get(c.pool_id) ?? "", cat.get(c.category_id) ?? "",
-      c.vendor_name ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type, paidOn.get(c.id) ?? "", c.payment_reference ?? "",
+      c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, pool.get(c.pool_id) ?? "", cat.get(c.category_id) ?? "",
+      c.expense_date ?? "", c.vendor_name ?? "", c.due_date ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type, paidOn.get(c.id) ?? "", c.payment_reference ?? "",
     ]),
   ];
   const csv = rows.map((r) => r.map((v) => csvCell(String(v))).join(",")).join("\r\n");

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { sendEmail } from "@/lib/email";
 import { formatSGD } from "@/lib/money";
@@ -24,6 +25,7 @@ function refusal(error: { code?: string; message: string }): ActionResult {
 export async function decideClaim(id: string, approve: boolean, reason?: string): Promise<ActionResult> {
   await requireMember();
   if (!uuid.safeParse(id).success) return { ok: false, error: "Claim not found." };
+  if ((reason?.trim().length ?? 0) > 500) return { ok: false, error: "Keep the reason under 500 characters." };
   const supabase = await createClient();
   const { data, error } = await supabase
     .rpc("decide_claim", { p_claim: id, p_approve: approve, p_reason: reason ?? null })
@@ -32,18 +34,20 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
 
   const first = data.claimant_name.split(" ")[0];
   const amount = formatSGD(data.amount_cents);
+  // The decision is saved; the email goes out after the response, so a slow mail server never
+  // holds up (or seems to fail) the approval.
   if (data.status === "approved") {
-    await sendEmail(data.claimant_email, `Your claim for ${amount} has been approved`, [
+    after(() => sendEmail(data.claimant_email, `Your claim for ${amount} has been approved`, [
       `Hi ${first},`,
       `Your claim of ${amount} for ${data.pool_name} has been approved by Finance. You'll be paid shortly.`,
-    ], { href: `/claims/${id}`, label: "View claim" });
+    ], { href: `/claims/${id}`, label: "View claim" }));
   } else if (data.status === "rejected") {
-    await sendEmail(data.claimant_email, `Your claim for ${amount} needs attention`, [
+    after(() => sendEmail(data.claimant_email, `Your claim for ${amount} needs attention`, [
       `Hi ${first},`,
       `Your claim for ${data.pool_name} was not approved.`,
       `Reason: ${reason?.trim()}`,
       "You're welcome to submit a new claim with the corrections.",
-    ], { href: `/claims/${id}`, label: "View claim" });
+    ], { href: `/claims/${id}`, label: "View claim" }));
   }
 
   revalidatePath(`/claims/${id}`);
@@ -58,10 +62,10 @@ export async function markPaid(id: string, reference: string): Promise<ActionRes
   const { data, error } = await supabase.rpc("mark_paid", { p_claim: id, p_reference: reference }).single<Outcome>();
   if (error) return refusal(error);
 
-  await sendEmail(data.claimant_email, `You've been paid ${formatSGD(data.amount_cents)}`, [
+  after(() => sendEmail(data.claimant_email, `You've been paid ${formatSGD(data.amount_cents)}`, [
     `Hi ${data.claimant_name.split(" ")[0]},`,
     `We've sent ${formatSGD(data.amount_cents)} for your ${data.pool_name} claim. Thank you for everything you do for New Normal!`,
-  ]);
+  ]));
 
   revalidatePath(`/claims/${id}`);
   revalidatePath("/payouts");

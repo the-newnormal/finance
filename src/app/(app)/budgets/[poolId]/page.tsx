@@ -15,12 +15,13 @@ export default async function PoolPage({ params }: PageProps<"/budgets/[poolId]"
   const { poolId } = await params;
   await requireReviewer();
   const supabase = await createClient();
-  const { data: pool } = await supabase.from("pool_totals").select("*").eq("pool_id", poolId).maybeSingle<PoolTotals>();
+  const { data: pool, error } = await supabase.from("pool_totals").select("*").eq("pool_id", poolId).maybeSingle<PoolTotals>();
+  if (error) throw new Error(`pool read failed: ${error.code}`); // an outage, not a missing budget
   if (!pool) notFound();
 
   const claims = await withNames(await fetchAll((from, to) =>
-    supabase.from("claims").select(ROW_COLUMNS).eq("pool_id", poolId).order("created_at", { ascending: false }).order("id").range(from, to),
-  ));
+    supabase.from("claims").select(ROW_COLUMNS).eq("pool_id", poolId).order("created_at").order("id").range(from, to),
+  )).then((rows) => rows.reverse()); // read oldest first (stable paging), show newest first
   const byCategory = new Map<string, number>();
   for (const c of claims) {
     if (c.status === "approved" || c.status === "paid") byCategory.set(c.categoryName, (byCategory.get(c.categoryName) ?? 0) + c.amount_cents);

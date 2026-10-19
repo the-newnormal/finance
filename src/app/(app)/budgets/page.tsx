@@ -2,6 +2,7 @@ import Link from "next/link";
 import { BudgetBar } from "@/components/budget-bar";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
+import { fetchAll } from "@/lib/fetch-all";
 import { formatSGD } from "@/lib/money";
 import { requireReviewer } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -13,13 +14,13 @@ export default async function BudgetsPage() {
   const me = await requireReviewer();
   const supabase = await createClient();
   // pool_totals is security_invoker: RLS hands each person only the budgets they have purview over.
-  const [totals, divisions] = await Promise.all([
-    supabase.from("pool_totals").select("*").order("name"),
-    supabase.from("divisions").select("id, name").order("name"),
+  const [pools, divisions] = await Promise.all([
+    fetchAll<PoolTotals>((from, to) => supabase.from("pool_totals").select("*").order("pool_id").range(from, to)),
+    fetchAll<Division>((from, to) => supabase.from("divisions").select("id, name").order("id").range(from, to)),
   ]);
-  for (const r of [totals, divisions]) if (r.error) throw new Error(`budgets read failed: ${r.error.code}`);
-  const pools = (totals.data ?? []) as PoolTotals[];
-  const groups = ((divisions.data ?? []) as Division[])
+  pools.sort((a, b) => a.name.localeCompare(b.name));
+  divisions.sort((a, b) => a.name.localeCompare(b.name));
+  const groups = divisions
     .map((d) => ({ division: d, pools: pools.filter((p) => p.division_id === d.id) }))
     .filter((g) => g.pools.length);
   const sum = (k: keyof Pick<PoolTotals, "allocated_cents" | "approved_cents" | "paid_cents">) =>

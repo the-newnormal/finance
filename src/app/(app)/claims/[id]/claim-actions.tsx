@@ -28,7 +28,7 @@ export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: 
       {rejecting ? (
         <>
           <Field label="Reason (sent to the claimant)">
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Receipt is unreadable; please re-upload." />
+            <Textarea maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Receipt is unreadable; please re-upload." />
           </Field>
           <div className="flex gap-2">
             <Button variant="destructive" disabled={pending} onClick={() => run(() => decideClaim(claimId, false, reason))}>Reject claim</Button>

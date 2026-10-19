@@ -22,6 +22,10 @@ function getTransporter() {
     port,
     secure: port === 465,
     auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+    // Fail fast rather than hold a function open for minutes on an unreachable server.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
   });
   return transporter;
 }
@@ -50,7 +54,7 @@ export async function sendEmail(to: string, subject: string, paragraphs: string[
   }
   try {
     await t.sendMail({
-      from: process.env.MAIL_FROM ?? process.env.SMTP_USER,
+      from: process.env.MAIL_FROM || process.env.SMTP_USER, // || so a blank MAIL_FROM falls back too
             to,
       subject,
       html,
