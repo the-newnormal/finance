@@ -216,7 +216,7 @@ end $$;
 drop function public.mark_paid(uuid, text);
 
 create function public.mark_paid(p_claim uuid, p_reference text, p_account uuid)
-returns table (claimant_email text, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
+returns table (claimant_id uuid, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
 language plpgsql security definer set search_path = '' as $$
 declare
   v_me public.members;
@@ -249,9 +249,8 @@ begin
           left(v_claim.claimant_name || ' · ' || v_ref, 300), v_claim.id, v_me.id, v_me.name);
 
   return query
-    select m.email, v_claim.claimant_name, v_claim.amount_cents, p.name, 'paid'::public.claim_status
-    from public.members m, public.pools p
-    where m.id = v_claim.claimant_id and p.id = v_claim.pool_id;
+    select v_claim.claimant_id, v_claim.claimant_name, v_claim.amount_cents, p.name, 'paid'::public.claim_status
+    from public.pools p where p.id = v_claim.pool_id;
 end $$;
 
 revoke all on function public.add_bank_account(text, text, text, bigint, date),
