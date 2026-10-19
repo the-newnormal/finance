@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TBody, TD, TH, THead } from "@/components/ui/table";
 import { csvCell } from "@/lib/csv";
-import { IMPORT_COLUMNS, parseImport, type ImportRow } from "@/lib/import-claims";
+import { IMPORT_COLUMNS, MAX_IMPORT_CHARS, parseImport, type ImportRow } from "@/lib/import-claims";
 import { formatDate, formatSGD } from "@/lib/money";
 
 const TEMPLATE = [
@@ -30,8 +30,14 @@ export function ImportForm() {
     setDone(null);
     if (!file) return;
     const text = await file.text();
-    const parsed = parseImport(text);
     setFileName(file.name);
+    if (text.length > MAX_IMPORT_CHARS) {
+      setCsv(null);
+      setRows([]);
+      setErrors(["The file is too large. Split it and import a part at a time."]);
+      return;
+    }
+    const parsed = parseImport(text);
     setCsv(parsed.ok ? text : null);
     setRows(parsed.ok ? parsed.rows : []);
     setErrors(parsed.ok ? [] : parsed.errors);
@@ -102,7 +108,7 @@ export function ImportForm() {
         <Card>
           <CardHeader>
             <CardTitle>3. Check and import · {rows.length} claim{rows.length === 1 ? "" : "s"} · {formatSGD(total)}</CardTitle>
-            <CardDescription>All of them are saved together, or none if any row is refused.</CardDescription>
+            <CardDescription>All of them are saved together, or none if any row is refused. A row already imported is refused, so importing again is safe.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <Table>

@@ -105,9 +105,9 @@ export function AttachFiles({ claimId, uid, room }: { claimId: string; uid: stri
       const storage = createClient().storage.from("receipts");
       const folder = `${uid}/${crypto.randomUUID()}`;
       const paths: string[] = [];
-      for (const f of files) {
+      for (const [i, f] of files.entries()) {
         const safe = f.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
-        const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
+        const path = `${folder}/${i + 1}-${safe}`; // a digit prefix, which the claim page hides
         const { error } = await storage.upload(path, f, { contentType: f.type, upsert: false });
         if (error) throw error;
         paths.push(path);

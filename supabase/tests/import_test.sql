@@ -92,8 +92,22 @@ select is((select balance_cents from public.bank_balances where name = 'I Joint'
   'the expected balance follows');
 select is((select paid_cents from public.guideline_totals where budget_id = '0a400000-0000-4000-8000-000000000001'), 7500::bigint,
   'and the spending counts against the guideline');
-select results_eq($$ select action from public.claim_events where claim_id = pg_temp.claim('I imported one') order by id $$,
-  $$ values ('submitted'), ('paid') $$, 'its history shows it submitted and paid');
+select results_eq($$ select action, (at at time zone 'Asia/Singapore')::date::text from public.claim_events
+     where claim_id = pg_temp.claim('I imported one') order by id $$,
+  $$ values ('submitted', '2026-02-01'), ('paid', '2026-02-01') $$, 'its history shows it submitted and paid, on the paid date');
+select throws_ok($$ select public.import_paid_claims(jsonb_build_array(pg_temp.row('i-vol@test.local', 'I imported one', '2026-02-01'))) $$,
+  'P0001', 'Row 1: this claim has already been imported.', 'importing the same row again is refused, not paid twice');
+
+-- Names must be unambiguous, and the account open.
+insert into public.budgets (id, name, division_id) values
+  ('0a400000-0000-4000-8000-000000000002', 'i budget', '0a200000-0000-4000-8000-000000000001');
+select throws_ok($$ select public.import_paid_claims(jsonb_build_array(pg_temp.row('i-vol@test.local', 'I twin', '2026-02-04'))) $$,
+  'P0001', 'Row 1: more than one budget is called "I Budget". Rename one on the Setup page first.', 'an ambiguous budget name is refused');
+update public.budgets set name = 'I Other' where id = '0a400000-0000-4000-8000-000000000002';
+update public.bank_accounts set active = false where name = 'I Joint';
+select throws_ok($$ select public.import_paid_claims(jsonb_build_array(pg_temp.row('i-vol@test.local', 'I closed', '2026-02-04'))) $$,
+  'P0001', 'Row 1: That bank account is closed.', 'a closed account is refused');
+update public.bank_accounts set active = true where name = 'I Joint';
 
 -- ---------- the member and their lead see it ----------
 select pg_temp.login('0a100000-0000-4000-8000-000000000003');

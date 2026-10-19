@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { parseImport } from "@/lib/import-claims";
+import { MAX_IMPORT_CHARS, parseImport } from "@/lib/import-claims";
 import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,7 +12,7 @@ export type ImportResult = { ok: true; count: number } | { ok: false; errors: st
 // dates and says which row is wrong, in words meant for Finance.
 export async function importPaidClaims(csv: string): Promise<ImportResult> {
   await requireFinance();
-  if (csv.length > 2_000_000) return { ok: false, errors: ["The file is too large. Import at most 1,000 rows at a time."] };
+  if (csv.length > MAX_IMPORT_CHARS) return { ok: false, errors: ["The file is too large. Split it and import a part at a time."] };
   const parsed = parseImport(csv);
   if (!parsed.ok) return parsed;
 

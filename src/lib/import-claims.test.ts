@@ -9,6 +9,7 @@ describe("parseCsv", () => {
   it("reads quoted commas, quotes and newlines", () => {
     expect(parseCsv('a,"b, c","say ""hi""","x\ny"\r\n1,2,3,4')).toEqual([["a", "b, c", 'say "hi"', "x\ny"], ["1", "2", "3", "4"]]);
   });
+  it("refuses an unclosed quote", () => expect(() => parseCsv('a,"b')).toThrow());
   it("drops a BOM and blank lines", () => expect(parseCsv("﻿a,b\n\n,\n1,2\n")).toEqual([["a", "b"], ["1", "2"]]));
 });
 
@@ -44,6 +45,14 @@ describe("parseImport", () => {
   it("reports every bad row by number", () => {
     const r = parseImport(`${header}\n${row}\nnot-an-email,B,C,Taxi,abc,yesterday,,TX,A\n${row}`);
     expect(r).toEqual({ ok: false, errors: ["Row 2: check the member email, amount, paid date, purchase date, payment reference."] });
+  });
+
+  it("refuses a repeated column", () => {
+    expect(parseImport(`${header},Amount\n${row},1`)).toEqual({ ok: false, errors: [expect.stringContaining("amount appears more than once")] });
+  });
+
+  it("refuses a file cut short inside a quoted cell", () => {
+    expect(parseImport(`${header}\n${row.replace("Joint A", '"Joint A')}`)).toEqual({ ok: false, errors: [expect.stringContaining("never closed")] });
   });
 
   it("refuses an empty file and a header with no rows", () => {

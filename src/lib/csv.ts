@@ -6,7 +6,8 @@ export function csvCell(v: string) {
 
 /**
  * Parses CSV text (as Excel, Numbers or Google Sheets export it) into rows of cells: quoted cells
- * may hold commas, newlines and doubled quotes; a leading BOM and blank lines are dropped.
+ * may hold commas, newlines and doubled quotes; a leading BOM and blank lines are dropped. Throws
+ * if a quoted cell is never closed (the file is cut short or malformed).
  */
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -29,6 +30,7 @@ export function parseCsv(text: string): string[][] {
       row = [];
     } else cell += ch;
   }
+  if (quoted) throw new Error("A quoted cell is never closed.");
   row.push(cell);
   if (row.some((c) => c.trim() !== "")) rows.push(row);
   return rows;

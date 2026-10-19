@@ -119,20 +119,41 @@ begin
     if v_member.id is null then
       raise exception 'Row %: no member has the email %. Add them on the People page first.', v_n, v_row ->> 'email';
     end if;
-    select * into v_budget from public.budgets b where lower(b.name) = lower(btrim(v_row ->> 'budget'));
+    -- Names must pick out exactly one budget, category and account (budget names needn't be unique).
+    if (select count(*) from public.budgets b where lower(b.name) = lower(btrim(v_row ->> 'budget'))) > 1 then
+      raise exception 'Row %: more than one budget is called "%". Rename one on the Setup page first.', v_n, v_row ->> 'budget';
+    end if;
+    -- FOR SHARE: the budget can't move to another division while this claim takes its division.
+    select * into v_budget from public.budgets b where lower(b.name) = lower(btrim(v_row ->> 'budget')) for share;
     if v_budget.id is null then
       raise exception 'Row %: no budget is called "%".', v_n, v_row ->> 'budget';
     end if;
+    if (select count(*) from public.budget_categories bc join public.categories c on c.id = bc.category_id
+        where bc.budget_id = v_budget.id and lower(c.name) = lower(btrim(v_row ->> 'category'))) > 1 then
+      raise exception 'Row %: more than one category of "%" is called "%".', v_n, v_budget.name, v_row ->> 'category';
+    end if;
+    v_category := null;
     select bc.category_id into v_category from public.budget_categories bc
       join public.categories c on c.id = bc.category_id
-     where bc.budget_id = v_budget.id and lower(c.name) = lower(btrim(v_row ->> 'category'));
+     where bc.budget_id = v_budget.id and lower(c.name) = lower(btrim(v_row ->> 'category'))
+       for share of bc;
     if v_category is null then
       raise exception 'Row %: the budget "%" doesn''t provide for the category "%".', v_n, v_budget.name, v_row ->> 'category';
     end if;
+    if (select count(*) from public.bank_accounts a where lower(a.name) = lower(btrim(v_row ->> 'account'))) > 1 then
+      raise exception 'Row %: more than one bank account is called "%". Rename one on the Bank page first.', v_n, v_row ->> 'account';
+    end if;
+    v_account := null;
     select * into v_account from public.bank_accounts a where lower(a.name) = lower(btrim(v_row ->> 'account'));
     if v_account.id is null then
       raise exception 'Row %: no bank account is called "%".', v_n, v_row ->> 'account';
     end if;
+    -- Like Mark as paid: only an open account, locked so it can't be closed mid-import.
+    begin
+      v_account := private.active_account(v_account.id);
+    exception when raise_exception then
+      raise exception 'Row %: %', v_n, sqlerrm;
+    end;
 
     v_amount := (v_row ->> 'amount_cents')::bigint;
     if v_amount is null or v_amount <= 0 or v_amount > 100000000 then
@@ -160,16 +181,25 @@ begin
       raise exception 'Row %: add a description (3 to 500 characters).', v_n;
     end if;
 
-    insert into public.claims (kind, status, claimant_id, claimant_name, division_id, budget_id, category_id,
-      description, amount_cents, expense_date, attachment_paths, payment_reference, submission_id, imported,
-      created_at, updated_at)
-    values ('reimbursement', 'paid', v_member.id, v_member.name, v_budget.division_id, v_budget.id, v_category,
-      v_desc, v_amount, v_expense, '{}', v_ref, gen_random_uuid(), true,
-      v_paid::timestamptz, now())
-    returning id into v_claim;
-    -- claims_after_insert has logged 'submitted' under the claimant; record the payment too.
-    insert into public.claim_events (claim_id, actor_id, actor_name, action, note)
-    values (v_claim, v_me.id, v_me.name, 'paid', 'Imported · ' || v_ref);
+    -- The submission id is derived from the row itself, so importing the same row again (a retried
+    -- request, or the same file twice) is refused by claims' unique index instead of paying twice.
+    begin
+      insert into public.claims (kind, status, claimant_id, claimant_name, division_id, budget_id, category_id,
+        description, amount_cents, expense_date, attachment_paths, payment_reference, submission_id, imported,
+        created_at, updated_at)
+      values ('reimbursement', 'paid', v_member.id, v_member.name, v_budget.division_id, v_budget.id, v_category,
+        v_desc, v_amount, v_expense, '{}', v_ref,
+        md5(concat_ws('|', 'import', v_budget.id, v_category, v_amount, v_paid, lower(v_ref), lower(v_desc)))::uuid,
+        true, v_paid::timestamptz, now())
+      returning id into v_claim;
+    exception when unique_violation then
+      raise exception 'Row %: this claim has already been imported.', v_n;
+    end;
+    -- claims_after_insert has logged 'submitted' under the claimant; date it, and the payment, on the
+    -- day it was paid (claim history and the export show these dates).
+    update public.claim_events e set at = v_paid::timestamptz where e.claim_id = v_claim;
+    insert into public.claim_events (claim_id, actor_id, actor_name, action, note, at)
+    values (v_claim, v_me.id, v_me.name, 'paid', 'Imported · ' || v_ref, v_paid::timestamptz);
     insert into public.bank_entries (account_id, kind, amount_cents, entry_date, note, claim_id, actor_id, actor_name)
     values (v_account.id, 'payout', -v_amount, v_paid, left(v_member.name || ' · ' || v_ref || ' (imported)', 300),
       v_claim, v_me.id, v_me.name);

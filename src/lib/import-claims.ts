@@ -1,6 +1,9 @@
 import { parseCsv } from "@/lib/csv";
 import { parseAmountToCents } from "@/lib/money";
 
+/** Server actions accept at most 1 MB; well over 1,000 rows of claims fit in this. */
+export const MAX_IMPORT_CHARS = 900_000;
+
 /** The import template's columns, in order. */
 export const IMPORT_COLUMNS = [
   "member email", "budget", "category", "description", "amount", "purchase date", "paid date", "payment reference", "bank account",
@@ -44,9 +47,18 @@ export function parseDate(input: string): string | null {
  * database, all rows at once.
  */
 export function parseImport(text: string): ParsedImport {
-  const [header, ...body] = parseCsv(text);
+  let table: string[][];
+  try {
+    table = parseCsv(text);
+  } catch {
+    return { ok: false, errors: ["The file isn't valid CSV: a quoted cell is never closed. Save it from your spreadsheet again."] };
+  }
+  const [header, ...body] = table;
   if (!header) return { ok: false, errors: ["The file is empty."] };
-  const at = new Map(header.map((h, i) => [key(h), i]));
+  const keys = header.map(key);
+  const repeated = IMPORT_COLUMNS.filter((c) => keys.indexOf(c) !== keys.lastIndexOf(c));
+  if (repeated.length) return { ok: false, errors: [`Each column may appear once: ${repeated.join(", ")} appears more than once.`] };
+  const at = new Map(keys.map((k, i) => [k, i]));
   const missing = IMPORT_COLUMNS.filter((c) => !at.has(c));
   if (missing.length) return { ok: false, errors: [`Missing column${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}.`] };
   if (!body.length) return { ok: false, errors: ["There are no rows under the headers."] };
