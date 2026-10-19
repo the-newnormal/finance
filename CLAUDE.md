@@ -33,11 +33,12 @@ A claim moves `pending_review` → `pending_finance` → `approved` → `paid`, 
 - Never modify the production schema by hand. **All schema changes are migrations in `supabase/migrations/`.**
 - **RLS ON for every table** (CI's `migrations` job fails otherwise: `scripts/check-migrations.sh`, required on `main`). The database decides who sees and does what; app code never re-implements a rule it could get wrong. Helpers in the `private` schema (`private.is_finance()`, `private.in_purview(division)`, …) are the single definition of each rule.
 - Claims are inserted by their claimant (RLS) and a trigger fills everything the claimant must not choose (status, division, names, timestamps). Status only changes through `decide_claim` (approve or reject, at either stage) and `mark_paid`, which check the caller themselves and log to `claim_events`; `claims` has no update grant at all.
-- Budget totals are **computed** from claims (`pool_totals` view), never stored.
+- Budget totals are **computed** from claims (`pool_totals` view), never stored. A claim keeps the division its budget had when it was made, so a budget with claims can't move to another division.
 - Budget amounts (`pool_budgets`) are visible only to core members of the division, Finance and admins; volunteers see pool names only.
 - Payout details are encrypted by the server (AES-256-GCM, `src/lib/crypto.ts`) with the claimant's id as additional authenticated data, so a ciphertext can't be moved to someone else's claim. `claims.payout_enc` is never granted to `authenticated`; Finance reads it only through `claim_payout_enc()`.
 - New tables, views and functions get no grants by default: grant what's needed in the same migration, `revoke execute … from public` on new functions, and create views `with (security_invoker = true)`.
-- Receipts live in the private `receipts` bucket at `<auth uid>/<random>/<file>`; anyone who can see a claim can read its files, nobody else.
+- Receipts live in the private `receipts` bucket at `<auth uid>/<random>/<file>`; a claim may only attach files already uploaded there. Anyone who can see a claim can read its files, nobody else.
+- A member and their divisions are saved together through `admin_add_member` / `admin_update_member` (SECURITY INVOKER: RLS and triggers still decide), never as separate requests.
 
 ## Security
 - Never commit secrets (`.env*` is git-ignored; use `.env.example`).

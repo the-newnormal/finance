@@ -197,6 +197,9 @@ begin
     if v_path not like v_me.id::text || '/%' or v_path like '%..%' then
       raise exception 'Invalid attachment.' using errcode = '42501';
     end if;
+    if not exists (select 1 from storage.objects o where o.bucket_id = 'receipts' and o.name = v_path) then
+      raise exception 'Upload the receipt first.';
+    end if;
   end loop;
 
   new.claimant_id := v_me.id;
@@ -242,8 +245,22 @@ end $$;
 create trigger members_before_update before update on public.members
   for each row execute function private.members_before_update();
 
+-- A claim keeps the division its budget had when it was made (claims.division_id decides who reviews
+-- and sees it), so a budget with claims can't move to another division.
+create function private.pools_before_update() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.division_id <> old.division_id and exists (select 1 from public.claims c where c.pool_id = old.id) then
+    raise exception 'This budget already has claims, so it can''t move to another division. Close it and create a new one there.';
+  end if;
+  return new;
+end $$;
+
+create trigger pools_before_update before update on public.pools
+  for each row execute function private.pools_before_update();
+
 revoke all on function private.claims_before_insert(), private.claims_after_insert(),
-  private.members_before_update(), private.me() from public, authenticated;
+  private.members_before_update(), private.pools_before_update(), private.me() from public, authenticated;
 
 -- ---------------------------------------------------------------------------------------------
 -- Row level security
@@ -283,13 +300,13 @@ create policy pool_budgets_admin on public.pool_budgets for all to authenticated
 
 -- Members: yourself; Finance and admins see everyone. Only admins add or change members.
 create policy members_select on public.members for select to authenticated
-  using (id = auth.uid() or private.is_finance());
+  using ((id = auth.uid() and private.is_active()) or private.is_finance());
 create policy members_insert on public.members for insert to authenticated with check (private.is_admin());
 create policy members_update on public.members for update to authenticated
   using (private.is_admin()) with check (private.is_admin());
 
 create policy division_members_select on public.division_members for select to authenticated
-  using (member_id = auth.uid() or private.is_finance());
+  using ((member_id = auth.uid() and private.is_active()) or private.is_finance());
 create policy division_members_admin on public.division_members for all to authenticated
   using (private.is_admin()) with check (private.is_admin());
 
@@ -325,8 +342,9 @@ grant select on public.claim_events to authenticated;
 revoke delete on public.members from authenticated;
 
 -- ---------------------------------------------------------------------------------------------
--- Budget totals, computed from claims (never stored). security_invoker: RLS on pool_budgets and
--- claims decides which pools and claims each person's totals include.
+-- Budget totals, computed from claims (never stored). security_invoker, so RLS on claims decides
+-- which claims each person's totals include; the where clause shows only pools in their purview
+-- (volunteers get none). A pool with no pool_budgets row shows as 0 allocated, not missing.
 -- ---------------------------------------------------------------------------------------------
 create view public.pool_totals with (security_invoker = true) as
 select
@@ -335,13 +353,14 @@ select
   p.kind,
   p.division_id,
   p.active,
-  b.allocated_cents,
+  coalesce(b.allocated_cents, 0)::bigint as allocated_cents,
   coalesce(sum(c.amount_cents) filter (where c.status in ('pending_review', 'pending_finance')), 0)::bigint as pending_cents,
   coalesce(sum(c.amount_cents) filter (where c.status = 'approved'), 0)::bigint as approved_cents,
   coalesce(sum(c.amount_cents) filter (where c.status = 'paid'), 0)::bigint as paid_cents
 from public.pools p
-join public.pool_budgets b on b.pool_id = p.id
+left join public.pool_budgets b on b.pool_id = p.id
 left join public.claims c on c.pool_id = p.id
+where private.in_purview(p.division_id)
 group by p.id, b.allocated_cents;
 
 revoke all on public.pool_totals from anon, authenticated;
@@ -366,6 +385,9 @@ declare
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_next public.claim_status;
 begin
+  if p_approve is null then
+    raise exception 'Choose approve or reject.';
+  end if;
   v_me := private.me();
   select * into v_claim from public.claims c where c.id = p_claim for update;
   if v_me.id is null or v_claim.id is null
@@ -465,6 +487,43 @@ revoke all on function public.decide_claim(uuid, boolean, text), public.mark_pai
   public.claim_payout_enc(uuid) from public, anon;
 grant execute on function public.decide_claim(uuid, boolean, text), public.mark_paid(uuid, text),
   public.claim_payout_enc(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- People: a member and their divisions are saved together, in one transaction. SECURITY INVOKER,
+-- so RLS (admins only) and the members trigger (not your own access) decide, as for any write.
+-- Volunteers belong to no division.
+-- ---------------------------------------------------------------------------------------------
+create function public.admin_add_member(p_id uuid, p_email text, p_name text, p_role public.member_role,
+  p_finance boolean, p_divisions uuid[])
+returns void language plpgsql security invoker set search_path = '' as $$
+begin
+  insert into public.members (id, email, name, role, finance)
+  values (p_id, lower(btrim(p_email)), btrim(p_name), p_role, p_finance);
+  if p_role <> 'volunteer' then
+    insert into public.division_members (member_id, division_id)
+    select distinct p_id, d from unnest(coalesce(p_divisions, '{}')) d;
+  end if;
+end $$;
+
+create function public.admin_update_member(p_id uuid, p_role public.member_role, p_finance boolean,
+  p_active boolean, p_divisions uuid[])
+returns void language plpgsql security invoker set search_path = '' as $$
+begin
+  update public.members m set role = p_role, finance = p_finance, active = p_active where m.id = p_id;
+  if not found then
+    raise exception 'That person wasn''t found.' using errcode = 'P0002';
+  end if;
+  delete from public.division_members dm where dm.member_id = p_id;
+  if p_role <> 'volunteer' then
+    insert into public.division_members (member_id, division_id)
+    select distinct p_id, d from unnest(coalesce(p_divisions, '{}')) d;
+  end if;
+end $$;
+
+revoke all on function public.admin_add_member(uuid, text, text, public.member_role, boolean, uuid[]),
+  public.admin_update_member(uuid, public.member_role, boolean, boolean, uuid[]) from public, anon;
+grant execute on function public.admin_add_member(uuid, text, text, public.member_role, boolean, uuid[]),
+  public.admin_update_member(uuid, public.member_role, boolean, boolean, uuid[]) to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
 -- Receipts: private bucket, <auth uid>/<random>/<file>. Upload into your own folder only; read
