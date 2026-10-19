@@ -48,9 +48,10 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   const may = permissions(me, claim, (myDivisions ?? []).map((d) => d.division_id as string));
   const payout = may.seePayout ? await payoutPanel(supabase, claim, ref) : null;
   // Finance and admins only (RLS on bank_balances); everyone else gets none.
-  const { data: accounts } = may.markPaid
+  const { data: accounts, error: accountsError } = may.markPaid
     ? await supabase.from("bank_balances").select("account_id, name, last4, balance_cents").eq("active", true).order("name")
-    : { data: [] };
+    : { data: [], error: null };
+  if (accountsError) throw new Error(`bank accounts read failed: ${accountsError.code}`);
 
   return (
     <>

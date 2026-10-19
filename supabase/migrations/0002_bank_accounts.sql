@@ -150,14 +150,25 @@ begin
 end $$;
 
 -- Money in (a grant or other income) or a correction to match the bank. Both need a note.
+-- p_expected_balance_cents: the balance the caller computed this entry from (the "match DBS"
+-- shortcut). If given, the account is locked and the entry refused unless that is still the
+-- balance, so two people can't both save the same correction.
 create function public.record_bank_entry(p_account uuid, p_kind public.bank_entry_kind, p_amount_cents bigint,
-  p_date date, p_note text)
+  p_date date, p_note text, p_expected_balance_cents bigint default null)
 returns bigint language plpgsql security definer set search_path = '' as $$
 declare
   v_me public.members := private.finance_me();
-  v_account public.bank_accounts := private.active_account(p_account);
+  v_account public.bank_accounts;
   v_id bigint;
 begin
+  if p_expected_balance_cents is not null then
+    -- FOR UPDATE first: it waits for, and then blocks, every other entry on this account.
+    perform 1 from public.bank_accounts a where a.id = p_account for update;
+    if p_expected_balance_cents <> (select coalesce(sum(e.amount_cents), 0) from public.bank_entries e where e.account_id = p_account) then
+      raise exception 'The balance has changed since you compared it. Compare with DBS again.';
+    end if;
+  end if;
+  v_account := private.active_account(p_account);
   if p_kind not in ('grant', 'adjustment') then
     raise exception 'Record grants and adjustments here; payouts and transfers have their own steps.';
   end if;
@@ -244,10 +255,10 @@ begin
 end $$;
 
 revoke all on function public.add_bank_account(text, text, text, bigint, date),
-  public.record_bank_entry(uuid, public.bank_entry_kind, bigint, date, text),
+  public.record_bank_entry(uuid, public.bank_entry_kind, bigint, date, text, bigint),
   public.transfer_between_accounts(uuid, uuid, bigint, date, text),
   public.mark_paid(uuid, text, uuid) from public, anon;
 grant execute on function public.add_bank_account(text, text, text, bigint, date),
-  public.record_bank_entry(uuid, public.bank_entry_kind, bigint, date, text),
+  public.record_bank_entry(uuid, public.bank_entry_kind, bigint, date, text, bigint),
   public.transfer_between_accounts(uuid, uuid, bigint, date, text),
   public.mark_paid(uuid, text, uuid) to authenticated;

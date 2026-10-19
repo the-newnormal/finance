@@ -42,7 +42,15 @@ const KIND_LABEL: Record<Entry["kind"], string> = {
   transfer_out: "Transfer out",
 };
 
-type Form = { kind: "grant" | "adjustment" | "transfer" | "account"; accountId?: string; direction?: "in" | "out"; amount?: string; note?: string };
+type Form = {
+  kind: "grant" | "adjustment" | "transfer" | "account";
+  accountId?: string;
+  direction?: "in" | "out";
+  amount?: string;
+  note?: string;
+  /** Set by "Record as adjustment": the balance the difference was computed from. */
+  expectedBalanceCents?: number;
+};
 
 function useAction() {
   const router = useRouter();
@@ -84,7 +92,7 @@ export function BankManager({ accounts, entries, ledger, today }: {
         {accounts.map((a) => (
           <AccountCard key={a.account_id} account={a}
             onAdjust={(cents) => setForm({ kind: "adjustment", accountId: a.account_id, direction: cents > 0 ? "in" : "out",
-              amount: (Math.abs(cents) / 100).toFixed(2), note: "Match DBS balance" })} />
+              amount: (Math.abs(cents) / 100).toFixed(2), note: "Match DBS balance", expectedBalanceCents: a.balance_cents })} />
         ))}
       </div>
 
@@ -210,7 +218,11 @@ function EntryForm({ form, accounts, today, onDone }: { form: Form; accounts: Ac
     e.preventDefault();
     if (form.kind === "account") return run(() => addAccount({ name: v.name, bank: v.bank, last4: v.last4, opening: v.amount, asOf: v.date }), onDone);
     if (form.kind === "transfer") return run(() => transfer({ from: v.accountId, to: v.to, amount: v.amount, date: v.date, note: v.note }), onDone);
-    run(() => recordEntry({ accountId: v.accountId, kind: form.kind as "grant" | "adjustment", direction: v.direction, amount: v.amount, date: v.date, note: v.note }), onDone);
+    // The DBS shortcut's balance only holds while its account and amount are unchanged.
+    const expected = form.expectedBalanceCents !== undefined && v.accountId === form.accountId && v.amount === form.amount
+      ? form.expectedBalanceCents : undefined;
+    run(() => recordEntry({ accountId: v.accountId, kind: form.kind as "grant" | "adjustment", direction: v.direction,
+      amount: v.amount, date: v.date, note: v.note, expectedBalanceCents: expected }), onDone);
   }
 
   return (

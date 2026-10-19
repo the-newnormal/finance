@@ -57,6 +57,8 @@ const entry = z.object({
   amount: z.string(),
   date,
   note: note.min(3, "Add a note saying what this is"),
+  /** The balance the "match DBS" shortcut computed from; the database refuses it if that changed. */
+  expectedBalanceCents: z.number().int().optional(),
 });
 
 /** A grant (money in) or an adjustment (in or out) to match the bank. */
@@ -71,6 +73,7 @@ export async function recordEntry(input: z.input<typeof entry>): Promise<BankRes
   const supabase = await createClient();
   const { error } = await supabase.rpc("record_bank_entry", {
     p_account: v.accountId, p_kind: v.kind, p_amount_cents: signed, p_date: v.date, p_note: v.note,
+    p_expected_balance_cents: v.expectedBalanceCents ?? null,
   });
   return done(error);
 }
