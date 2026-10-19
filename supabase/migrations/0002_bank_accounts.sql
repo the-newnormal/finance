@@ -92,12 +92,14 @@ language sql stable set search_path = '' as $$
   select (now() at time zone 'Asia/Singapore')::date
 $$;
 
+-- Locks the account FOR SHARE until the caller's transaction ends, so it can't be closed between
+-- this check and the entry being written.
 create function private.active_account(p_account uuid) returns public.bank_accounts
-language plpgsql stable security definer set search_path = '' as $$
+language plpgsql volatile security definer set search_path = '' as $$
 declare
   v public.bank_accounts;
 begin
-  select * into v from public.bank_accounts a where a.id = p_account;
+  select * into v from public.bank_accounts a where a.id = p_account for share;
   if v.id is null then
     raise exception 'Choose a bank account.' using errcode = 'P0002';
   end if;
@@ -107,7 +109,24 @@ begin
   return v;
 end $$;
 
-revoke all on function private.finance_me(), private.sg_today(), private.active_account(uuid) from public, authenticated;
+-- Entries are dated between the account's opening balance and today: an earlier one is already in
+-- the opening balance (it would count twice), and a later one hasn't happened yet.
+create function private.check_entry_date(p_account public.bank_accounts, p_date date) returns void
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_opening date;
+begin
+  if p_date > private.sg_today() then
+    raise exception 'The date can''t be in the future.';
+  end if;
+  select e.entry_date into v_opening from public.bank_entries e where e.account_id = p_account.id and e.kind = 'opening';
+  if p_date < v_opening then
+    raise exception 'The date is before %''s opening balance (%), which already includes it.', p_account.name, to_char(v_opening, 'DD Mon YYYY');
+  end if;
+end $$;
+
+revoke all on function private.finance_me(), private.sg_today(), private.active_account(uuid),
+  private.check_entry_date(public.bank_accounts, date) from public, authenticated;
 
 -- Adds an account and its opening balance together.
 create function public.add_bank_account(p_name text, p_bank text, p_last4 text, p_opening_cents bigint, p_as_of date)
@@ -118,6 +137,9 @@ declare
 begin
   if p_opening_cents is null or p_opening_cents < 0 then
     raise exception 'Enter the opening balance.';
+  end if;
+  if p_as_of > private.sg_today() then
+    raise exception 'The date can''t be in the future.';
   end if;
   insert into public.bank_accounts (name, bank, last4)
   values (btrim(p_name), coalesce(nullif(btrim(p_bank), ''), 'DBS'), btrim(p_last4))
@@ -145,9 +167,7 @@ begin
   if length(btrim(coalesce(p_note, ''))) < 3 then
     raise exception 'Add a note saying what this is.';
   end if;
-  if p_date > private.sg_today() then
-    raise exception 'The date can''t be in the future.';
-  end if;
+  perform private.check_entry_date(v_account, coalesce(p_date, private.sg_today()));
   insert into public.bank_entries (account_id, kind, amount_cents, entry_date, note, actor_id, actor_name)
   values (v_account.id, p_kind, p_amount_cents, coalesce(p_date, private.sg_today()), btrim(p_note), v_me.id, v_me.name)
   returning id into v_id;
@@ -171,9 +191,8 @@ begin
   if p_amount_cents is null or p_amount_cents <= 0 then
     raise exception 'Enter a valid amount.';
   end if;
-  if v_date > private.sg_today() then
-    raise exception 'The date can''t be in the future.';
-  end if;
+  perform private.check_entry_date(v_from, v_date);
+  perform private.check_entry_date(v_to, v_date);
   insert into public.bank_entries (account_id, kind, amount_cents, entry_date, note, transfer_id, actor_id, actor_name) values
     (v_from.id, 'transfer_out', -p_amount_cents, v_date, coalesce(v_note, 'Transfer to ' || v_to.name), v_transfer, v_me.id, v_me.name),
     (v_to.id, 'transfer_in', p_amount_cents, v_date, coalesce(v_note, 'Transfer from ' || v_from.name), v_transfer, v_me.id, v_me.name);

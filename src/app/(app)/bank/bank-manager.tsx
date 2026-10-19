@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Table, TBody, TD, TH, THead } from "@/components/ui/table";
-import { formatDate, formatSGD, parseAmountToCents } from "@/lib/money";
+import { formatDate, formatSGD, parseBudgetToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { addAccount, recordEntry, setAccountActive, transfer, type BankResult } from "./actions";
 
@@ -60,12 +60,23 @@ function useAction() {
   return { pending, error, run };
 }
 
-export function BankManager({ accounts, entries, today }: { accounts: Account[]; entries: Entry[]; today: string }) {
+export function BankManager({ accounts, entries, ledger, today }: {
+  accounts: Account[];
+  entries: Entry[];
+  ledger: { account: string | null; page: number; hasOlder: boolean };
+  today: string;
+}) {
+  const router = useRouter();
   const [form, setForm] = useState<Form | null>(accounts.length ? null : { kind: "account" });
-  const [shown, setShown] = useState<string | "all">("all");
   const active = accounts.filter((a) => a.active);
   const name = (id: string) => accounts.find((a) => a.account_id === id)?.name ?? "—";
-  const visible = entries.filter((e) => shown === "all" || e.account_id === shown).slice(0, 200);
+  const visible = entries;
+  const go = (account: string | null, page: number) => {
+    const q = new URLSearchParams();
+    if (account) q.set("account", account);
+    if (page) q.set("page", String(page));
+    router.push(`/bank${q.size ? `?${q}` : ""}`);
+  };
 
   return (
     <div className="grid gap-6">
@@ -89,7 +100,7 @@ export function BankManager({ accounts, entries, today }: { accounts: Account[];
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Ledger</CardTitle>
-          <Select className="max-w-60" value={shown} onChange={(e) => setShown(e.target.value)} aria-label="Show entries for">
+          <Select className="max-w-60" value={ledger.account ?? "all"} onChange={(e) => go(e.target.value === "all" ? null : e.target.value, 0)} aria-label="Show entries for">
             <option value="all">All accounts</option>
             {accounts.map((a) => <option key={a.account_id} value={a.account_id}>{a.name}</option>)}
           </Select>
@@ -116,8 +127,11 @@ export function BankManager({ accounts, entries, today }: { accounts: Account[];
           ) : (
             <p className="py-8 text-center text-sm text-ink-soft">Nothing recorded yet.</p>
           )}
-          {entries.length > visible.length && shown === "all" && (
-            <p className="pt-3 text-center text-xs text-ink-soft">Showing the latest 200. Pick an account to narrow it down.</p>
+          {(ledger.page > 0 || ledger.hasOlder) && (
+            <div className="flex justify-center gap-2 pt-4">
+              <Button size="sm" variant="outline" disabled={ledger.page === 0} onClick={() => go(ledger.account, ledger.page - 1)}>Newer</Button>
+              <Button size="sm" variant="outline" disabled={!ledger.hasOlder} onClick={() => go(ledger.account, ledger.page + 1)}>Older</Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -128,7 +142,8 @@ export function BankManager({ accounts, entries, today }: { accounts: Account[];
 function AccountCard({ account: a, onAdjust }: { account: Account; onAdjust: (cents: number) => void }) {
   const { pending, error, run } = useAction();
   const [dbs, setDbs] = useState("");
-  const dbsCents = dbs.trim() === "" ? null : parseAmountToCents(dbs.replace(/^-/, ""));
+  // parseBudgetToCents: a balance can be zero.
+  const dbsCents = dbs.trim() === "" ? null : parseBudgetToCents(dbs.trim().replace(/^-/, ""));
   const signedDbs = dbsCents === null ? null : dbs.trim().startsWith("-") ? -dbsCents : dbsCents;
   const diff = signedDbs === null ? null : signedDbs - a.balance_cents;
 
