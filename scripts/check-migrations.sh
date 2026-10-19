@@ -15,7 +15,8 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 db_url=${DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}
 sql() { psql "$db_url" --no-psqlrc -v ON_ERROR_STOP=1 -Atc "$1"; }
-files=$(cd supabase/migrations && printf '%s\n' *.sql | LC_ALL=C sort)
+# nullglob: no .sql files means an empty list, not the literal pattern.
+files=$(cd supabase/migrations && shopt -s nullglob && sql=(*.sql) && { [ ${#sql[@]} -eq 0 ] || printf '%s\n' "${sql[@]}"; } | LC_ALL=C sort)
 status=0
 
 not_applied=$(LC_ALL=C comm -23 <(echo "$files") \
@@ -32,6 +33,8 @@ no_rls=$(sql "
   join pg_namespace n on n.oid = c.relnamespace
   where c.relkind in ('r', 'p')
     and not c.relrowsecurity
+    -- tables an extension owns (e.g. pgtap's) aren't the app's to secure
+    and not exists (select 1 from pg_depend d where d.classid = 'pg_class'::regclass and d.objid = c.oid and d.deptype = 'e')
     and n.nspname not like 'pg\_%'
     and n.nspname not in ('information_schema',
       'auth', 'storage', 'realtime', '_realtime', 'vault',
