@@ -25,7 +25,8 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   const supabase = await createClient();
 
   // RLS: only the claimant and people with purview over its division get a row.
-  const { data: claim } = await supabase.from("claims").select(CLAIM_COLUMNS).eq("id", id).maybeSingle<Claim>();
+  const { data: claim, error } = await supabase.from("claims").select(CLAIM_COLUMNS).eq("id", id).maybeSingle<Claim>();
+  if (error) throw new Error(`claim read failed: ${error.code}`); // an outage, not a missing claim
   if (!claim) notFound();
 
   const [pool, category, events, files] = await Promise.all([
@@ -35,6 +36,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
     // Signed as the viewer, so storage RLS decides; links last ten minutes.
     supabase.storage.from("receipts").createSignedUrls(claim.attachment_paths, 600),
   ]);
+  for (const r of [pool, category, events, files]) if (r.error) throw new Error(`claim page read failed`);
   const ref = `NN-${claim.id.slice(0, 8).toUpperCase()}`;
 
   return (
