@@ -189,7 +189,7 @@ begin
         created_at, updated_at)
       values ('reimbursement', 'paid', v_member.id, v_member.name, v_budget.division_id, v_budget.id, v_category,
         v_desc, v_amount, v_expense, '{}', v_ref,
-        md5(concat_ws('|', 'import', v_budget.id, v_category, v_amount, v_paid, lower(v_ref), lower(v_desc)))::uuid,
+        md5(concat_ws('|', 'import', v_budget.id, v_category, v_account.id, v_amount, v_expense, v_paid, lower(v_ref), lower(v_desc)))::uuid,
         true, v_paid::timestamptz, now())
       returning id into v_claim;
     exception when unique_violation then
