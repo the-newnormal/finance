@@ -2,7 +2,7 @@
 
 import { FileText, Paperclip, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { forgetSavedPayout, submitClaim, type ClaimInput } from "../actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -18,21 +18,30 @@ type Props = {
   today: string;
   canInvoice: boolean;
   goesStraightToFinance: boolean;
-  pools: { id: string; name: string; kind: "event" | "general" }[];
+  budgets: { id: string; name: string; kind: "event" | "general" }[];
+  /** Which categories each budget provisions: a claim may only use one of its budget's. */
+  provisions: { budget_id: string; category_id: string }[];
   categories: { id: string; name: string }[];
   savedPayout: { type: PayoutType; masked: string } | null;
 };
 
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
-// The types the receipts bucket accepts (supabase/migrations/0001_init.sql).
+// The types the receipts bucket accepts (supabase/migrations/0003_claims.sql).
 const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
 
 // A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
 type Attachment = { file: File; path?: string };
 
-export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools, categories, savedPayout }: Props) {
+export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budgets, provisions, categories, savedPayout }: Props) {
   const router = useRouter();
+  const [budgetId, setBudgetId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  // Only the categories the chosen budget provisions (the database refuses any other).
+  const budgetCategories = useMemo(() => {
+    const ids = new Set(provisions.filter((p) => p.budget_id === budgetId).map((p) => p.category_id));
+    return categories.filter((c) => ids.has(c.id));
+  }, [budgetId, provisions, categories]);
   const [kind, setKind] = useState<"reimbursement" | "invoice">("reimbursement");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [folder] = useState(() => `${uid}/${crypto.randomUUID()}`);
@@ -103,8 +112,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
 
       const res = await submitClaim({
         kind,
-        poolId: s("poolId"),
-        categoryId: s("categoryId"),
+        budgetId,
+        categoryId,
         description: s("description"),
         amount: s("amount"),
         expenseDate: s("expenseDate"),
@@ -149,21 +158,23 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
         <Card>
           <CardHeader><CardTitle>What was it for?</CardTitle></CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Field label="Event or budget" className="sm:col-span-2">
-              <Select name="poolId" required defaultValue="">
+            <Field label="Budget" className="sm:col-span-2">
+              <Select name="budgetId" required value={budgetId}
+                onChange={(e) => { setBudgetId(e.target.value); setCategoryId(""); }}>
                 <option value="" disabled>Choose one…</option>
-                {pools.filter((p) => p.kind === "event").length > 0 && (
-                  <optgroup label="Events">{pools.filter((p) => p.kind === "event").map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+                {budgets.filter((b) => b.kind === "event").length > 0 && (
+                  <optgroup label="Events">{budgets.filter((b) => b.kind === "event").map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
                 )}
-                {pools.filter((p) => p.kind === "general").length > 0 && (
-                  <optgroup label="Other budgets">{pools.filter((p) => p.kind === "general").map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+                {budgets.filter((b) => b.kind === "general").length > 0 && (
+                  <optgroup label="Other budgets">{budgets.filter((b) => b.kind === "general").map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
                 )}
               </Select>
             </Field>
             <Field label="Category">
-              <Select name="categoryId" required defaultValue="">
-                <option value="" disabled>Choose one…</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <Select name="categoryId" required value={categoryId} disabled={!budgetId}
+                onChange={(e) => setCategoryId(e.target.value)}>
+                <option value="" disabled>{budgetId ? "Choose one…" : "Choose a budget first"}</option>
+                {budgetCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
             </Field>
             <Field label="Amount (SGD)">

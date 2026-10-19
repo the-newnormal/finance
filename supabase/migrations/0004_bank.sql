@@ -1,10 +1,10 @@
--- New Normal's bank accounts (today, two joint-alternate DBS accounts) and an append-only ledger of
--- what goes in and out of them, so Finance can compare the expected balance with DBS iBanking.
+-- Part 4: New Normal's bank accounts and an append-only ledger of what goes in and out of them, so
+-- Finance can compare each account's expected balance with DBS iBanking, and paying a claim.
 --
--- Only Finance and admins (private.is_finance()) can see or change any of it: no other member, not
--- even a claimant, learns which account paid them. Entries are never edited or deleted; a mistake
--- is corrected with an adjustment, so the ledger always explains the balance. Every write goes
--- through the functions below, which check the caller and stamp who did it.
+-- Only Finance sees or changes any of it: no other member, claimant included, ever learns which
+-- account paid them. Entries are never edited or deleted; a mistake is corrected with an
+-- adjustment, so the ledger always explains the balance. Every write goes through a function below,
+-- which checks the caller and stamps who did it. Only the last four digits of an account are stored.
 
 create type public.bank_entry_kind as enum ('opening', 'grant', 'payout', 'adjustment', 'transfer_in', 'transfer_out');
 
@@ -12,7 +12,6 @@ create table public.bank_accounts (
   id uuid primary key default gen_random_uuid(),
   name text not null unique check (length(btrim(name)) between 1 and 80),
   bank text not null default 'DBS' check (length(btrim(bank)) between 1 and 40),
-  -- Only the last four digits, enough to tell the accounts apart; never the full number.
   last4 text not null check (last4 ~ '^[0-9]{4}$'),
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -58,8 +57,7 @@ create policy bank_accounts_rename on public.bank_accounts for update to authent
   using (private.is_finance()) with check (private.is_finance());
 create policy bank_entries_finance on public.bank_entries for select to authenticated using (private.is_finance());
 
--- Expected balance: the sum of the ledger, never stored. security_invoker, so the policies above
--- decide (everyone but Finance and admins gets no rows).
+-- Expected balance: the sum of the ledger, never stored.
 create view public.bank_balances with (security_invoker = true) as
 select a.id as account_id, a.name, a.bank, a.last4, a.active,
        coalesce(sum(e.amount_cents), 0)::bigint as balance_cents,
@@ -72,26 +70,8 @@ revoke all on public.bank_balances from anon, authenticated;
 grant select on public.bank_balances to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
--- Writes
+-- Helpers
 -- ---------------------------------------------------------------------------------------------
-
--- The signed-in Finance member or admin, or an error.
-create function private.finance_me() returns public.members
-language plpgsql stable security definer set search_path = '' as $$
-declare
-  v_me public.members := private.me();
-begin
-  if v_me.id is null or not private.is_finance() then
-    raise exception 'Only Finance can manage bank accounts.' using errcode = '42501';
-  end if;
-  return v_me;
-end $$;
-
-create function private.sg_today() returns date
-language sql stable set search_path = '' as $$
-  select (now() at time zone 'Asia/Singapore')::date
-$$;
-
 -- Locks the account FOR SHARE until the caller's transaction ends, so it can't be closed between
 -- this check and the entry being written.
 create function private.active_account(p_account uuid) returns public.bank_accounts
@@ -125,9 +105,12 @@ begin
   end if;
 end $$;
 
-revoke all on function private.finance_me(), private.sg_today(), private.active_account(uuid),
-  private.check_entry_date(public.bank_accounts, date) from public, authenticated;
+revoke all on function private.active_account(uuid), private.check_entry_date(public.bank_accounts, date)
+  from public, authenticated;
 
+-- ---------------------------------------------------------------------------------------------
+-- Writes
+-- ---------------------------------------------------------------------------------------------
 -- Adds an account and its opening balance together.
 create function public.add_bank_account(p_name text, p_bank text, p_last4 text, p_opening_cents bigint, p_as_of date)
 returns uuid language plpgsql security definer set search_path = '' as $$
@@ -151,8 +134,8 @@ end $$;
 
 -- Money in (a grant or other income) or a correction to match the bank. Both need a note.
 -- p_expected_balance_cents: the balance the caller computed this entry from (the "match DBS"
--- shortcut). If given, the account is locked and the entry refused unless that is still the
--- balance, so two people can't both save the same correction.
+-- shortcut). If given, the entry is refused unless that is still the balance, so two people can't
+-- both save the same correction.
 create function public.record_bank_entry(p_account uuid, p_kind public.bank_entry_kind, p_amount_cents bigint,
   p_date date, p_note text, p_expected_balance_cents bigint default null)
 returns bigint language plpgsql security definer set search_path = '' as $$
@@ -210,13 +193,10 @@ begin
   return v_transfer;
 end $$;
 
--- Paying a claim now says which account the money left, and takes it off that account's balance in
--- the same transaction. The claim's own history (which its claimant and reviewers see) gets only the
--- bank reference, never the account.
-drop function public.mark_paid(uuid, text);
-
+-- Records that Finance has paid an approved claim and takes it off the account it left, in one
+-- transaction. The claim's own history (which its claimant and leads see) gets only the reference.
 create function public.mark_paid(p_claim uuid, p_reference text, p_account uuid)
-returns table (claimant_id uuid, claimant_name text, amount_cents bigint, pool_name text, status public.claim_status)
+returns table (claimant_id uuid, claimant_name text, amount_cents bigint, budget_name text, status public.claim_status)
 language plpgsql security definer set search_path = '' as $$
 declare
   v_me public.members;
@@ -225,7 +205,7 @@ declare
   v_ref text := btrim(coalesce(p_reference, ''));
 begin
   v_me := private.me();
-  if v_me.id is null or not private.is_finance() then
+  if v_me.id is null or v_me.role <> 'finance' then
     raise exception 'Only Finance can record payments.' using errcode = '42501';
   end if;
   select * into v_claim from public.claims c where c.id = p_claim for update;
@@ -249,8 +229,8 @@ begin
           left(v_claim.claimant_name || ' · ' || v_ref, 300), v_claim.id, v_me.id, v_me.name);
 
   return query
-    select v_claim.claimant_id, v_claim.claimant_name, v_claim.amount_cents, p.name, 'paid'::public.claim_status
-    from public.pools p where p.id = v_claim.pool_id;
+    select v_claim.claimant_id, v_claim.claimant_name, v_claim.amount_cents, b.name, 'paid'::public.claim_status
+    from public.budgets b where b.id = v_claim.budget_id;
 end $$;
 
 revoke all on function public.add_bank_account(text, text, text, bigint, date),

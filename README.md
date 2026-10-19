@@ -17,7 +17,7 @@ pnpm supabase db reset            # apply migrations + seed
 pnpm dev
 ```
 
-`supabase/seed.sql` creates `admin@example.com` (admin, with Finance), a division, six categories and one event budget. Request a link at `/login` and open it from Mailpit at http://127.0.0.1:54324.
+`supabase/seed.sql` creates `finance@example.com` (Finance), a division, six categories and one event budget that provisions three of them. Request a link at `/login` and open it from Mailpit at http://127.0.0.1:54324.
 
 ```bash
 pnpm supabase test db             # RLS and workflow tests in supabase/tests/
@@ -28,10 +28,11 @@ pnpm typecheck && pnpm lint && pnpm test
 ```
 
 ## How it works
-- **Roles:** volunteer, core (reviews their divisions' claims and sees their budgets), admin, plus a Finance flag. See the table in [CLAUDE.md](CLAUDE.md).
-- **A claim** goes `pending_review` (volunteers only: one approval from a core member of the division) → `pending_finance` → `approved` → `paid`, or `rejected` with a reason. The claimant is emailed when it's approved, rejected or paid.
+- **Roles:** volunteer, division lead (preliminary approval of their divisions' claims; sees their budgets and spending) and Finance (everything else, including accounts and setup). See the table in [CLAUDE.md](CLAUDE.md).
+- **Budgets:** divisions are empty shells; Finance creates budgets in them. Each budget provisions spend categories with a guideline amount each, and claims can only use those categories. Leads and Finance see spending against each guideline.
+- **A claim** goes `pending_review` (volunteers only: one approval from a lead of the division) → `pending_finance` → `approved` → `paid`, or `rejected` with a reason. The claimant is emailed when it's approved, rejected or paid.
 - **Payouts:** Finance opens an approved claim to get a PayNow QR code (amount and reference `NN-XXXXXXXX` pre-filled), pays it in the bank app, then records the bank reference. Bank-transfer claims show the account details instead.
-- **Bank:** Finance records each account's opening balance, grants and other income, adjustments and transfers; paying a claim asks which account it came from. The Bank page shows each account's expected balance and compares it with the DBS balance you type in. Only Finance and admins see it.
+- **Bank:** Finance records each account's opening balance, grants and other income, adjustments and transfers; paying a claim asks which account it came from. The Bank page shows each account's expected balance and compares it with the DBS balance you type in. Only Finance sees it.
 - **Payout details** are encrypted with AES-256-GCM (`PAYOUT_ENCRYPTION_KEY`) and the claimant's id as additional authenticated data; everyone but Finance sees only the last four characters.
 
 ## Deploying (Supabase + Vercel)
@@ -41,6 +42,6 @@ pnpm typecheck && pnpm lint && pnpm test
 4. **Authentication → Emails → Templates:** paste `supabase/templates/magic-link.html` (Magic link) and `supabase/templates/invite.html` (Invite user). Supabase's default links don't work with `/auth/callback`.
 5. **Authentication → Emails → SMTP Settings:** your sender (e.g. Gmail SMTP with an app password). Supabase's built-in sender only mails your Supabase team, two emails an hour.
 6. **Vercel:** import the repo, then set the environment variables from `.env.example`. Mark `SUPABASE_SERVICE_ROLE_KEY`, `PAYOUT_ENCRYPTION_KEY` and `SMTP_PASSWORD` as Sensitive, and never give them a `NEXT_PUBLIC_` prefix. Generate the encryption key with `pnpm gen-key` and keep a copy in a password manager: saved payout details can't be read without it.
-7. **First admin:** in Supabase → Authentication → Users, choose **Add user → Create new user** with your email and **Auto Confirm User** ticked (don't use "Send invitation": the dashboard's invite has no link back to this app). Then in the SQL editor:
-   `insert into members (id, email, name, role, finance) select id, email, 'Your Name', 'admin', true from auth.users where email = 'you@newnormal.sg';`
+7. **First Finance member:** in Supabase → Authentication → Users, choose **Add user → Create new user** with your email and **Auto Confirm User** ticked (don't use "Send invitation": the dashboard's invite has no link back to this app). Then in the SQL editor:
+   `insert into members (id, email, name, role) select id, email, 'Your Name', 'finance' from auth.users where email = 'you@newnormal.sg';`
    Sign in at `/login` with that email. After that, add everyone else from the People page, whose invites link back correctly.

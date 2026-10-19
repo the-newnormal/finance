@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { fetchAll } from "@/lib/fetch-all";
-import { requireAdmin } from "@/lib/session";
+import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import type { Division, Member } from "@/lib/types";
 import { PeopleManager } from "./people-manager";
@@ -8,14 +8,14 @@ import { PeopleManager } from "./people-manager";
 export const metadata = { title: "People" };
 
 export default async function PeoplePage() {
-  const me = await requireAdmin();
+  const me = await requireFinance();
   const supabase = await createClient();
-  // Every row: an admin saving someone must see all of their divisions, or the save would drop some.
+  // Every row: Finance saving someone must see every division they lead, or the save would drop some.
   const [members, divisions, links] = await Promise.all([
-    fetchAll<Member>((from, to) => supabase.from("members").select("id, email, name, role, finance, active").order("created_at").order("id").range(from, to)),
+    fetchAll<Member>((from, to) => supabase.from("members").select("id, email, name, role, active").order("created_at").order("id").range(from, to)),
     fetchAll<Division>((from, to) => supabase.from("divisions").select("id, name").order("name").order("id").range(from, to)),
     fetchAll<{ member_id: string; division_id: string }>((from, to) =>
-      supabase.from("division_members").select("member_id, division_id").order("member_id").order("division_id").range(from, to)),
+      supabase.from("division_leads").select("member_id, division_id").order("member_id").order("division_id").range(from, to)),
   ]);
   const byMember = new Map<string, string[]>();
   for (const l of links) byMember.set(l.member_id, [...(byMember.get(l.member_id) ?? []), l.division_id]);

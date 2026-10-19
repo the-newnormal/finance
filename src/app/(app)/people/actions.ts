@@ -2,17 +2,23 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/session";
+import { requireFinance } from "@/lib/session";
 import { createServiceRoleClient, MissingServiceKeyError } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export type Result = { ok: true } | { ok: false; error: string };
 
 const access = z.object({
-  role: z.enum(["volunteer", "core", "admin"]),
-  finance: z.boolean(),
+  role: z.enum(["volunteer", "lead", "finance"]),
   divisionIds: z.array(z.uuid()).max(500),
 });
+
+// Leads must lead at least one division; other roles lead none (any list sent is dropped).
+function divisionsFor(v: z.output<typeof access>): string[] | Result {
+  if (v.role !== "lead") return [];
+  if (!v.divisionIds.length) return { ok: false, error: "Choose at least one division for a division lead." };
+  return [...new Set(v.divisionIds)];
+}
 
 const newMember = access.extend({
   name: z.string().trim().min(1, "Enter a name").max(80),
@@ -30,13 +36,15 @@ function serviceClient(): ReturnType<typeof createServiceRoleClient> | Result {
   }
 }
 
-// Creates the login (Supabase sends the invite email) and then, as the signed-in admin, the member
-// row: RLS checks the admin again there. If the row can't be added, the login is deleted.
+// Creates the login (Supabase sends the invite email) and then, as the signed-in Finance member, the member
+// row: RLS checks Finance again there. If the row can't be added, the login is deleted.
 export async function inviteMember(input: z.input<typeof newMember>): Promise<Result> {
-  await requireAdmin();
+  await requireFinance();
   const parsed = newMember.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const v = parsed.data;
+  const divisions = divisionsFor(v);
+  if (!Array.isArray(divisions)) return divisions;
 
   const site = process.env.NEXT_PUBLIC_SITE_URL;
   if (!site) return { ok: false, error: "NEXT_PUBLIC_SITE_URL is not set, so invite links can't be built." };
@@ -62,17 +70,16 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
     return { ok: false, error: "The invite couldn't be sent. Try again." };
   }
 
-  // The member row and their divisions, in one transaction (admin_add_member, as the admin).
-  const { error: addError } = await supabase.rpc("admin_add_member", {
+  // The member row and their divisions, in one transaction (add_member, as Finance).
+  const { error: addError } = await supabase.rpc("add_member", {
     p_id: data.user.id,
     p_email: v.email,
     p_name: v.name,
     p_role: v.role,
-    p_finance: v.finance,
-    p_divisions: v.divisionIds,
+    p_divisions: divisions,
   });
   if (addError) {
-    console.error("admin_add_member failed", { code: addError.code });
+    console.error("add_member failed", { code: addError.code });
     // 23505: a member row appeared for this login meanwhile; it's someone's account, so leave it.
     if (addError.code === "23505") return { ok: false, error: "That person already has an account." };
     // Undo the login this invite made (no member row had it, checked above), retrying once; if that
@@ -95,39 +102,41 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
     return { ok: false, error: "The account couldn't be created." };
   }
 
-  revalidatePath("/admin/people");
+  revalidatePath("/people");
   return { ok: true };
 }
 
-// Changes someone's role, Finance flag, divisions and whether their account is active, in one
-// transaction as the signed-in admin (admin_update_member: RLS, and the database refuses changes to
+// Changes someone's role, the divisions they lead and whether their account is active, in one
+// transaction as the signed-in Finance member (update_member: RLS, and the database refuses changes to
 // your own access). Then the login's ban is set to match, every time, so retrying a save whose ban
 // update failed fixes it: deactivated logins can't sign in, and their sessions stop.
 export async function updateMember(id: string, input: z.input<typeof access> & { active: boolean }): Promise<Result> {
-  await requireAdmin();
+  await requireFinance();
   const parsed = access.extend({ active: z.boolean() }).safeParse(input);
-  if (!z.uuid().safeParse(id).success || !parsed.success) return { ok: false, error: "Invalid input." };
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "Invalid input." };
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const v = parsed.data;
+  const divisions = divisionsFor(v);
+  if (!Array.isArray(divisions)) return divisions;
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc("admin_update_member", {
+  const { error } = await supabase.rpc("update_member", {
     p_id: id,
     p_role: v.role,
-    p_finance: v.finance,
     p_active: v.active,
-    p_divisions: v.divisionIds,
+    p_divisions: divisions,
   });
   if (error) {
     if (error.code === "42501") return { ok: false, error: "You can't change your own access." };
     if (error.code === "P0002") return { ok: false, error: "That person wasn't found." };
-    console.error("admin_update_member failed", { code: error.code });
+    console.error("update_member failed", { code: error.code });
     return { ok: false, error: "The change couldn't be saved." };
   }
-  revalidatePath("/admin/people");
+  revalidatePath("/people");
 
   const service = serviceClient();
   if ("ok" in service) return { ok: false, error: `Saved, but their sign-in wasn't updated. ${service.ok ? "" : service.error}` };
-  // Ban to match what's saved *now*, not what this request sent, so if two admins save at once the
+  // Ban to match what's saved *now*, not what this request sent, so if two Finance members save at once the
   // login follows the latest save. (Access itself never depends on the ban: RLS checks
   // members.active on every read.)
   const { data: now, error: readError } = await supabase.from("members").select("active").eq("id", id).maybeSingle();
@@ -146,7 +155,7 @@ export async function updateMember(id: string, input: z.input<typeof access> & {
 // until they've used one, Supabase won't email them an ordinary sign-in link). Only for people who
 // already have a member row and whose login is still unconfirmed.
 export async function resendInvite(id: string): Promise<Result> {
-  await requireAdmin();
+  await requireFinance();
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "That person wasn't found." };
   const site = process.env.NEXT_PUBLIC_SITE_URL;
   if (!site) return { ok: false, error: "NEXT_PUBLIC_SITE_URL is not set, so invite links can't be built." };
