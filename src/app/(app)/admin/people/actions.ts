@@ -11,7 +11,7 @@ export type Result = { ok: true } | { ok: false; error: string };
 const access = z.object({
   role: z.enum(["volunteer", "core", "admin"]),
   finance: z.boolean(),
-  divisionIds: z.array(z.uuid()).max(50),
+  divisionIds: z.array(z.uuid()).max(500),
 });
 
 const newMember = access.extend({
@@ -66,8 +66,18 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
     p_divisions: v.divisionIds,
   });
   if (addError) {
-    await service.auth.admin.deleteUser(data.user.id);
     console.error("admin_add_member failed", { code: addError.code });
+    // Undo the login, retrying once; if that fails too, say so: a login without a member row can't
+    // be re-invited or seen on this page.
+    let undo = await service.auth.admin.deleteUser(data.user.id);
+    if (undo.error) undo = await service.auth.admin.deleteUser(data.user.id);
+    if (undo.error) {
+      console.error("invite rollback failed", { code: undo.error.code });
+      return {
+        ok: false,
+        error: `The account couldn't be created, and the login made for ${v.email} couldn't be removed. Delete it in Supabase → Authentication → Users, then try again.`,
+      };
+    }
     return { ok: false, error: "The account couldn't be created." };
   }
 
@@ -103,8 +113,13 @@ export async function updateMember(id: string, input: z.input<typeof access> & {
 
   const service = serviceClient();
   if ("ok" in service) return { ok: false, error: `Saved, but their sign-in wasn't updated. ${service.ok ? "" : service.error}` };
+  // Ban to match what's saved *now*, not what this request sent, so if two admins save at once the
+  // login follows the latest save. (Access itself never depends on the ban: RLS checks
+  // members.active on every read.)
+  const { data: now, error: readError } = await supabase.from("members").select("active").eq("id", id).maybeSingle();
+  if (readError || !now) return { ok: false, error: "Saved, but their sign-in couldn't be updated. Save again to retry." };
   const { error: banError } = await service.auth.admin.updateUserById(id, {
-    ban_duration: v.active ? "none" : BANNED_FOR,
+    ban_duration: now.active ? "none" : BANNED_FOR,
   });
   if (banError) {
     console.error("ban update failed", { code: banError.code });

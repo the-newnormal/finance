@@ -15,11 +15,18 @@ const USER = "00000000-0000-4000-8000-000000000001";
 const DIV = "10000000-0000-4000-8000-000000000001";
 const auth = { inviteUserByEmail: vi.fn(), deleteUser: vi.fn(), updateUserById: vi.fn() };
 const rpc = vi.fn();
+// What members.active reads as after the save (updateMember bans to match it).
+let savedActive: boolean;
+const from = vi.fn(() => {
+  const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: { active: savedActive }, error: null }) };
+  return q;
+});
 
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://finance.test");
   rpc.mockReset().mockResolvedValue({ error: null });
-  vi.mocked(createClient).mockResolvedValue({ rpc } as never);
+  savedActive = false;
+  vi.mocked(createClient).mockResolvedValue({ rpc, from } as never);
   vi.mocked(createServiceRoleClient).mockReturnValue({ auth: { admin: auth } } as never);
   auth.inviteUserByEmail.mockReset().mockResolvedValue({ data: { user: { id: USER } }, error: null });
   auth.deleteUser.mockReset().mockResolvedValue({ error: null });
@@ -49,6 +56,15 @@ describe("inviteMember", () => {
     rpc.mockResolvedValue({ error: { code: "23503" } });
     expect(await inviteMember(person)).toEqual({ ok: false, error: "The account couldn't be created." });
     expect(auth.deleteUser).toHaveBeenCalledWith(USER);
+  });
+
+  it("retries the rollback, then says if the login was left behind", async () => {
+    rpc.mockResolvedValue({ error: { code: "23503" } });
+    auth.deleteUser.mockResolvedValue({ error: { code: "unexpected_failure" } });
+    const res = await inviteMember(person);
+    expect(auth.deleteUser).toHaveBeenCalledTimes(2);
+    expect(res.ok).toBe(false);
+    expect(!res.ok && res.error).toContain("couldn't be removed");
   });
 
   it("says when the email already has an account", async () => {
@@ -83,7 +99,14 @@ describe("updateMember", () => {
   });
 
   it("lifts the ban for an active account, every time (so a retry fixes a failed one)", async () => {
+    savedActive = true;
     await updateMember(USER, { ...access, active: true });
+    expect(auth.updateUserById).toHaveBeenCalledWith(USER, { ban_duration: "none" });
+  });
+
+  it("bans to match what's saved now, not what this request sent", async () => {
+    savedActive = true; // another admin reactivated them meanwhile
+    await updateMember(USER, access);
     expect(auth.updateUserById).toHaveBeenCalledWith(USER, { ban_duration: "none" });
   });
 

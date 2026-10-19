@@ -12,11 +12,13 @@ export const getMe = cache(async (): Promise<{ user: true; member: Member | null
   const { data } = await supabase.auth.getClaims();
   const uid = data?.claims?.sub;
   if (!uid) return null;
-  const { data: member } = await supabase
+  const { data: member, error } = await supabase
     .from("members")
     .select("id, email, name, role, finance, active")
     .eq("id", uid)
     .maybeSingle<Member>();
+  // A failed read shows the error page (with retry), never the "not active" page.
+  if (error) throw new Error(`member lookup failed: ${error.code}`);
   return { user: true, member: member?.active ? member : null };
 });
 

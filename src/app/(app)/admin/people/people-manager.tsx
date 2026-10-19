@@ -100,7 +100,7 @@ export function PeopleManager({ people: users, divisions, meId }: { people: U[];
                       onChange={(e) => setEditing({ ...editing, active: e.target.checked })} /> Account active (unticking signs them out everywhere)
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" disabled={pending} onClick={() => run(() => updateMember(u.id, editing), `Updated ${u.name}.`, () => setEditing(null))}>Save</Button>
+                    <Button size="sm" disabled={pending} onClick={() => run(() => updateMember(u.id, editing), `Updated ${u.name}.`, () => setEditing((cur) => (cur?.id === u.id ? null : cur)))}>Save</Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
                   </div>
                 </div>

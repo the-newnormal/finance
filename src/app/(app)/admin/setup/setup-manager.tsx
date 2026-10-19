@@ -88,7 +88,8 @@ function PoolsCard({ pools, divisions }: { pools: PoolRow[]; divisions: Division
         {error && <Alert>{error}</Alert>}
         {pools.map((p) =>
           editing !== "new" && editing?.id === p.id ? (
-            <PoolForm key={p.id} pool={p} divisions={divisions} onDone={() => setEditing(null)} />
+            <PoolForm key={p.id} pool={p} divisions={divisions}
+              onDone={() => setEditing((cur) => (cur !== "new" && cur?.id === p.id ? null : cur))} />
           ) : (
             <div key={p.id} className={`flex flex-wrap items-center gap-3 rounded-xl border border-line p-4 ${p.active ? "" : "opacity-60"}`}>
               <div className="mr-auto">
@@ -105,7 +106,7 @@ function PoolsCard({ pools, divisions }: { pools: PoolRow[]; divisions: Division
           ),
         )}
         {editing === "new" ? (
-          <PoolForm pool={null} divisions={divisions} onDone={() => setEditing(null)} />
+          <PoolForm pool={null} divisions={divisions} onDone={() => setEditing((cur) => (cur === "new" ? null : cur))} />
         ) : (
           <Button variant="soft" onClick={() => setEditing("new")} disabled={!divisions.length}>
             <Plus /> New budget or event

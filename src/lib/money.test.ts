@@ -13,7 +13,7 @@ describe("parseAmountToCents", () => {
     expect(parseAmountToCents(input)).toBe(cents);
   });
 
-  it.each(["", "0", "0.00", "-5", "1.234", "abc", "1e3", "12.", ".5", "1234567890"])("rejects %j", (input) => {
+  it.each(["", "0", "0.00", "-5", "1.234", "abc", "1e3", "12.", ".5", "1234567890", "1,2", "12,34", "1,2345", ",100", "1 200"])("rejects %j", (input) => {
     expect(parseAmountToCents(input)).toBeNull();
   });
 
