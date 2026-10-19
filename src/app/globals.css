@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Tokens from newnormal.sg */
+:root {
+  --base: #f7f5f1;
+  --surface: #ffffff;
+  --ink: #34363e;
+  --ink-soft: rgba(52, 54, 62, 0.72);
+  --line: rgba(52, 54, 62, 0.12);
+  --brand: #60aecb;
+  --brand-deep: #2f7f9b;
+  --teal: #a8d5de;
+  --lavender: #c9c0ea;
+  --logo-purple: #8a8cd1;
+  --orange: #f5a470;
+  --yellow: #f8df7a;
+  --danger: #b4443a;
+}
+
+@theme inline {
+  /* "canvas", not "base": text-base is Tailwind's font size and would collide. */
+  --color-canvas: var(--base);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-teal: var(--teal);
+  --color-lavender: var(--lavender);
+  --color-purple: var(--logo-purple);
+  --color-orange: var(--orange);
+  --color-yellow: var(--yellow);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
+}
+
+/* The page colour sits on html only: on body it would cover BrandField's -z-10 wash. */
+html { background: var(--base); }
+body {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--lavender); }
