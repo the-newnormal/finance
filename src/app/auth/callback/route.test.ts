@@ -57,16 +57,16 @@ describe("GET /auth/callback", () => {
     expect(location(res)).toBe(`${ORIGIN}/claims`);
   });
 
-  it("sends a failed token_hash back to /login?error=link", async () => {
+  it("sends a failed token_hash back to /login?error=link, keeping next", async () => {
     verifyOtp.mockResolvedValue({ error: { code: "otp_expired", status: 403 } });
     const res = await callback("?token_hash=old&next=%2Fclaims");
-    expect(location(res)).toBe(`${ORIGIN}/login?error=link`);
+    expect(location(res)).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
   });
 
   it("sends a failed code exchange back to /login?error=link", async () => {
     exchangeCodeForSession.mockResolvedValue({ error: { code: "flow_state_not_found", status: 404 } });
     const res = await callback("?code=c0de");
-    expect(location(res)).toBe(`${ORIGIN}/login?error=link`);
+    expect(location(res)).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
   });
 
   it("verifies an invite (type=invite) and continues to next", async () => {
@@ -83,7 +83,7 @@ describe("GET /auth/callback", () => {
   it("sends a failed invite back to /login?error=link", async () => {
     verifyOtp.mockResolvedValue({ error: { code: "otp_expired", status: 403 } });
     const res = await callback("?token_hash=old&type=invite&next=%2Fclaims");
-    expect(location(res)).toBe(`${ORIGIN}/login?error=link`);
+    expect(location(res)).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
   });
 
   it.each(["recovery", "email_change", "signup", "magiclink", "sms", "", "EMAIL", "invite "])(
@@ -92,19 +92,19 @@ describe("GET /auth/callback", () => {
       const res = await callback(`?token_hash=abc&type=${encodeURIComponent(type)}&next=%2Fclaims`);
       expect(createClient).not.toHaveBeenCalled();
       expect(verifyOtp).not.toHaveBeenCalled();
-      expect(location(res)).toBe(`${ORIGIN}/login?error=link`);
+      expect(location(res)).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
     },
   );
 
   it("refuses a PKCE code with an unknown type", async () => {
     const res = await callback("?code=c0de&type=recovery");
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
-    expect(location(res)).toBe(`${ORIGIN}/login?error=link`);
+    expect(location(res)).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
   });
 
   it("sends a link with neither token_hash nor code to /login?error=link", async () => {
     const res = await callback("?next=%2Fclaims");
     expect(createClient).not.toHaveBeenCalled();
-    expect(location(res)).toBe(`${ORIGIN}/login?error=link`);
+    expect(location(res)).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
   });
 });

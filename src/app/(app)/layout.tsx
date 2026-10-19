@@ -1,14 +1,12 @@
 import { BrandField } from "@/components/brand-field";
 import { Nav } from "@/components/nav";
 import { requireMember } from "@/lib/session";
-import { canReview, isAdmin, isFinance } from "@/lib/types";
+import { isAdmin } from "@/lib/types";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const me = await requireMember();
   const links = [
     { href: "/claims", label: "My claims" },
-    ...(canReview(me) ? [{ href: "/review", label: "Review" }, { href: "/budgets", label: "Budgets" }] : []),
-    ...(isFinance(me) ? [{ href: "/payouts", label: "Payouts" }] : []),
     ...(isAdmin(me) ? [{ href: "/admin/people", label: "People" }, { href: "/admin/setup", label: "Setup" }] : []),
   ];
   const roleLabel = [

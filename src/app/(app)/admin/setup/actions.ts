@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { parseAmountToCents } from "@/lib/money";
+import { parseBudgetToCents } from "@/lib/money";
 import { requireAdmin } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import type { Result } from "../people/actions";
@@ -11,12 +11,13 @@ import type { Result } from "../people/actions";
 
 const name = (max: number) => z.string().trim().min(1).max(max);
 
-function done(error: { code?: string } | null, what: string): Result {
+function done(error: { code?: string; message?: string } | null, what: string): Result {
   if (!error) {
     revalidatePath("/admin/setup");
     return { ok: true };
   }
   if (error.code === "23505") return { ok: false, error: `That ${what} already exists.` };
+  if (error.code === "P0001" && "message" in error) return { ok: false, error: String(error.message) };
   console.error(`setup ${what} failed`, { code: error.code });
   return { ok: false, error: `The ${what} couldn't be saved.` };
 }
@@ -61,7 +62,7 @@ export async function savePool(id: string | null, input: z.input<typeof poolInpu
   const parsed = poolInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Fill in the name, division and budget." };
   const v = parsed.data;
-  const allocated_cents = v.allocated.trim() === "0" ? 0 : parseAmountToCents(v.allocated);
+  const allocated_cents = parseBudgetToCents(v.allocated);
   if (allocated_cents === null) return { ok: false, error: "Enter a valid budget, e.g. 1500 or 1500.00." };
 
   const supabase = await createClient();

@@ -7,6 +7,12 @@ export function parseAmountToCents(input: string): number | null {
   return cents > 0 ? cents : null;
 }
 
+/** Like parseAmountToCents, but a budget may be zero ("0", "0.00"). */
+export function parseBudgetToCents(input: string): number | null {
+  if (/^\$?\s*0+(\.0{1,2})?$/.test(input.trim())) return 0;
+  return parseAmountToCents(input);
+}
+
 export function formatSGD(cents: number) {
   return new Intl.NumberFormat("en-SG", { style: "currency", currency: "SGD" }).format(cents / 100);
 }
