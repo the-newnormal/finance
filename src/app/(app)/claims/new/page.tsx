@@ -15,6 +15,8 @@ export default async function NewClaimPage() {
     supabase.from("categories").select("id, name").eq("active", true).order("name"),
     supabase.from("member_payouts").select("payout_type, payout_masked").eq("member_id", me.id).maybeSingle(),
   ]);
+  // A failed read shows the error page, not a form with empty choices.
+  for (const r of [pools, categories, saved]) if (r.error) throw new Error(`new claim read failed: ${r.error.code}`);
 
   return (
     <>

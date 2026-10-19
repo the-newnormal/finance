@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
+import { decryptPayout, encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
 import { parseAmountToCents } from "@/lib/money";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
@@ -36,6 +36,8 @@ const claimInput = z.object({
   attachmentPaths: z.array(z.string().max(300)).min(1, "Attach at least one receipt or invoice").max(5),
   payout,
   savePayout: z.boolean().optional(),
+  /** Made once per claim by the form; a retry with the same id returns the claim already made. */
+  submissionId: z.uuid(),
 });
 
 export type ClaimInput = z.input<typeof claimInput>;
@@ -81,6 +83,13 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
       .eq("member_id", me.id)
       .maybeSingle();
     if (!saved) return { ok: false, error: "Enter your payout details." };
+    // Copy them only if Finance will be able to read them (e.g. not saved under a retired key).
+    try {
+      decryptPayout(saved.payout_enc, me.id);
+    } catch {
+      await supabase.from("member_payouts").delete().eq("member_id", me.id);
+      return { ok: false, error: "Your saved payout details can no longer be used. Please enter them again." };
+    }
     ({ payout_type, payout_masked, payout_enc } = saved);
   } else {
     const details = toDetails(v.payout);
@@ -105,9 +114,16 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
       payout_type,
       payout_masked,
       payout_enc,
+      submission_id: v.submissionId,
     })
     .select("id")
     .single();
+  if (error?.code === "23505") {
+    // Already submitted (a retry after a lost response): hand back that claim, don't make another.
+    const { data: existing } = await supabase
+      .from("claims").select("id").eq("claimant_id", me.id).eq("submission_id", v.submissionId).maybeSingle();
+    if (existing) return { ok: true, id: existing.id as string, payoutSaved: true };
+  }
   if (error) {
     // P0001 and 42501 come from our own trigger, in words meant for the claimant.
     if (error.code === "P0001" || error.code === "42501") return { ok: false, error: error.message };
@@ -131,9 +147,14 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
   return { ok: true, id: data.id as string, payoutSaved };
 }
 
-export async function forgetSavedPayout() {
+export async function forgetSavedPayout(): Promise<{ ok: boolean }> {
   const me = await requireMember();
   const supabase = await createClient();
-  await supabase.from("member_payouts").delete().eq("member_id", me.id);
+  const { error } = await supabase.from("member_payouts").delete().eq("member_id", me.id);
+  if (error) {
+    console.error("member_payouts delete failed", { code: error.code });
+    return { ok: false };
+  }
   revalidatePath("/claims/new");
+  return { ok: true };
 }

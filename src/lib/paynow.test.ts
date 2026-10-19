@@ -66,7 +66,7 @@ describe("normalisers", () => {
     "mobile %j -> %j",
     (input, out) => expect(normaliseSgMobile(input)).toBe(out),
   );
-  it.each(["6123 4567", "912345", "+1 415 555 0100"])("rejects mobile %j", (input) => {
+  it.each(["6123 4567", "912345", "+1 415 555 0100", "9123a4567", "9123.4567"])("rejects mobile %j", (input) => {
     expect(normaliseSgMobile(input)).toBeNull();
   });
   it.each([[" 201912345k ", "201912345K"], ["53312345D", "53312345D"], ["T08LL1234A", "T08LL1234A"]])(

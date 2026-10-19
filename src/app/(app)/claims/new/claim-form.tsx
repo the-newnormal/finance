@@ -39,6 +39,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
   const [payoutType, setPayoutType] = useState<PayoutType | "saved">(savedPayout ? "saved" : "paynow_mobile");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // One per claim: lets the server recognise a retry of this same claim.
+  const [submissionId] = useState(() => crypto.randomUUID());
 
   const isInvoice = kind === "invoice";
   const effectivePayout = isInvoice && payoutType === "saved" ? "paynow_uen" : payoutType;
@@ -67,6 +69,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
     const fd = new FormData(e.currentTarget);
     const s = (k: string) => String(fd.get(k) ?? "");
     setBusy(true);
+    let attachmentPaths: string[];
     try {
       // Straight into the private receipts bucket, in this member's own folder (storage RLS). Files
       // already uploaded by an earlier attempt are reused, not uploaded again.
@@ -84,8 +87,14 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
         uploaded.push({ ...a, path });
       }
       setFiles(uploaded);
-      const attachmentPaths = uploaded.map((a) => a.path!);
+      attachmentPaths = uploaded.map((a) => a.path!);
+    } catch {
+      setError("A file couldn't be uploaded. Check your connection and try again.");
+      setBusy(false);
+      return;
+    }
 
+    try {
       const payout: ClaimInput["payout"] =
         effectivePayout === "saved" ? { type: "saved" }
         : effectivePayout === "bank" ? { type: "bank", name: s("payeeName"), bankName: s("bankName"), accountNumber: s("accountNumber") }
@@ -103,11 +112,13 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
         attachmentPaths,
         payout,
         savePayout: fd.get("savePayout") === "on",
+        submissionId,
       });
       if (!res.ok) { setError(res.error); setBusy(false); return; }
       router.push(`/claims/${res.id}?submitted=1${res.payoutSaved ? "" : "&unsaved=1"}`);
     } catch {
-      setError("Upload failed. Check your connection and try again.");
+      // Safe to retry: the same submission id never makes a second claim.
+      setError("The claim couldn't be sent. Check your connection and try again.");
       setBusy(false);
     }
   }
@@ -123,7 +134,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">
             {(["reimbursement", "invoice"] as const).map((k) => (
-              <button key={k} type="button" onClick={() => setKind(k)}
+              <button key={k} type="button" disabled={busy} onClick={() => setKind(k)}
                 className={cn("rounded-xl px-4 py-2.5 text-left text-sm transition-colors", kind === k ? "bg-ink text-white" : "hover:bg-canvas")}>
                 <div className="font-medium">{k === "reimbursement" ? "Reimburse me" : "Pay a vendor invoice"}</div>
                 <div className={cn("text-xs", kind === k ? "text-white/70" : "text-ink-soft")}>
@@ -215,7 +226,12 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, pools
               ))}
               {savedPayout && !isInvoice && (
                 <button type="button" className="justify-self-start text-xs text-ink-soft underline-offset-4 hover:underline"
-                  onClick={async () => { await forgetSavedPayout(); setPayoutType("paynow_mobile"); router.refresh(); }}>
+                  onClick={async () => {
+                    const res = await forgetSavedPayout().catch(() => ({ ok: false }));
+                    if (!res.ok) return setError("Your saved details couldn't be removed. Try again.");
+                    setPayoutType("paynow_mobile");
+                    router.refresh();
+                  }}>
                   Forget my saved details
                 </button>
               )}

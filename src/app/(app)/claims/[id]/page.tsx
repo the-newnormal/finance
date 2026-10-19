@@ -22,6 +22,7 @@ const EVENT_LABEL: Record<ClaimEvent["action"], string> = {
 export default async function ClaimPage({ params, searchParams }: PageProps<"/claims/[id]">) {
   const [{ id }, { submitted, unsaved }] = await Promise.all([params, searchParams]);
   const me = await requireMember();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound(); // a mistyped link
   const supabase = await createClient();
 
   // RLS: only the claimant and people with purview over its division get a row.

@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decryptPayout } from "@/lib/crypto";
+import { decryptPayout, encryptPayout } from "@/lib/crypto";
 import { createClient } from "@/lib/supabase/server";
 import { submitClaim, type ClaimInput } from "./actions";
 
@@ -39,6 +39,7 @@ const base: ClaimInput = {
   expenseDate: "2026-10-01",
   attachmentPaths: [`${ME}/abc/0-r.jpg`],
   payout: { type: "paynow_mobile", name: "Tan Ah Kow", proxy: "9123 4567" },
+  submissionId: "60000000-0000-4000-8000-000000000001",
 };
 
 describe("submitClaim", () => {
@@ -58,9 +59,26 @@ describe("submitClaim", () => {
   });
 
   it("reuses the saved payout details as stored", async () => {
-    tables.member_payouts = table({ data: { payout_type: "bank", payout_masked: "DBS •••• 1234", payout_enc: "v1.x.y.z" }, error: null });
+    const enc = encryptPayout({ type: "bank", name: "Tan", bankName: "DBS", accountNumber: "1234567890" }, ME);
+    tables.member_payouts = table({ data: { payout_type: "bank", payout_masked: "DBS •••• 7890", payout_enc: enc }, error: null });
     await submitClaim({ ...base, payout: { type: "saved" } });
-    expect(tables.claims.insert).toHaveBeenCalledWith(expect.objectContaining({ payout_type: "bank", payout_enc: "v1.x.y.z" }));
+    expect(tables.claims.insert).toHaveBeenCalledWith(expect.objectContaining({ payout_type: "bank", payout_enc: enc }));
+  });
+
+  it("refuses saved details Finance couldn't read, and forgets them", async () => {
+    tables.member_payouts = table({ data: { payout_type: "bank", payout_masked: "DBS •••• 1234", payout_enc: "v1.x.y.z" }, error: null });
+    expect(await submitClaim({ ...base, payout: { type: "saved" } })).toEqual({
+      ok: false, error: "Your saved payout details can no longer be used. Please enter them again.",
+    });
+    expect(tables.member_payouts.delete).toHaveBeenCalled();
+    expect(tables.claims.insert).not.toHaveBeenCalled();
+  });
+
+  it("sends the submission id, and a retry returns the claim already made", async () => {
+    await submitClaim(base);
+    expect(tables.claims.insert).toHaveBeenCalledWith(expect.objectContaining({ submission_id: base.submissionId }));
+    tables.claims = table({ data: { id: "claim-1" }, error: { code: "23505", message: "duplicate" } });
+    expect(await submitClaim(base)).toEqual({ ok: true, id: "claim-1", payoutSaved: true });
   });
 
   it("says when the details couldn't be remembered, though the claim went in", async () => {

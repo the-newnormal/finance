@@ -35,6 +35,8 @@ export function normaliseUen(input: string): string | null {
 }
 
 export function normaliseSgMobile(input: string): string | null {
+  // Only digits and the usual separators; anything else (a letter, say) is a typo, not formatting.
+  if (!/^\+?[\d\s\-()]+$/.test(input.trim())) return null;
   const digits = input.replace(/\D/g, "").replace(/^65(?=\d{8}$)/, "");
   return /^[89]\d{7}$/.test(digits) ? `+65${digits}` : null;
 }
