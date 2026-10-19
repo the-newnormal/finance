@@ -43,7 +43,8 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   ]);
   for (const r of [pool, category, events, files]) if (r.error) throw new Error(`claim page read failed`);
   const ref = `NN-${claim.id.slice(0, 8).toUpperCase()}`;
-  const { data: myDivisions } = await supabase.from("division_members").select("division_id").eq("member_id", me.id);
+  const { data: myDivisions, error: divisionsError } = await supabase.from("division_members").select("division_id").eq("member_id", me.id);
+  if (divisionsError) throw new Error(`divisions read failed: ${divisionsError.code}`);
   const may = permissions(me, claim, (myDivisions ?? []).map((d) => d.division_id as string));
   const payout = may.seePayout ? await payoutPanel(supabase, claim, ref) : null;
 
