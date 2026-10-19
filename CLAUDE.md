@@ -24,6 +24,7 @@ Roles live on `members` (one row per login, `id` = `auth.users.id`): `role` is `
 | Review volunteer claims in their divisions | | ✓ | ✓ | ✓ |
 | See budgets and claims for their divisions | | ✓ | all | all |
 | Final approval, payouts, payout details | | | ✓ | ✓ |
+| Bank accounts: balances, grants, adjustments, transfers | | | ✓ | ✓ |
 | Approve their own claim | | | ✓ (finance flag only) | |
 | Create accounts, set roles, set up divisions, budgets and categories | | | | ✓ |
 
@@ -38,6 +39,7 @@ A claim moves `pending_review` → `pending_finance` → `approved` → `paid`, 
 - Payout details are encrypted by the server (AES-256-GCM, `src/lib/crypto.ts`) with the claimant's id as additional authenticated data, so a ciphertext can't be moved to someone else's claim. `claims.payout_enc` is never granted to `authenticated`; Finance reads it only through `claim_payout_enc()`.
 - New tables, views and functions get no grants by default: grant what's needed in the same migration, `revoke execute … from public` on new functions, and create views `with (security_invoker = true)`.
 - Receipts live in the private `receipts` bucket at `<auth uid>/<random>/<file>`; a claim may only attach files already uploaded there. Anyone who can see a claim can read its files, nobody else. Nobody updates or deletes receipts through the API (a delete could race a claim attaching the file).
+- **Bank accounts** (0002): `bank_accounts` and an append-only `bank_entries` ledger, visible only to Finance and admins (`private.is_finance()`); no other member, claimant included, ever learns which account paid them. The expected balance is the `bank_balances` view, the sum of the ledger, never stored. Entries are written only by `add_bank_account`, `record_bank_entry` (grants, adjustments), `transfer_between_accounts` and `mark_paid` (which now takes the account paid from); there are no update or delete grants, so mistakes are corrected with an adjustment. Only the last four digits of an account number are stored.
 - A budget and its amount are saved together through `admin_save_pool`, and a member and their divisions through `admin_add_member` / `admin_update_member` (SECURITY INVOKER: RLS and triggers still decide), never as separate requests.
 
 ## Security
