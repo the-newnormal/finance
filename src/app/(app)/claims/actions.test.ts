@@ -44,7 +44,7 @@ const base: ClaimInput = {
 describe("submitClaim", () => {
   it("encrypts the payout details for this member and inserts the claim", async () => {
     expect(await submitClaim(base)).toEqual({ ok: true, id: "claim-1" });
-    const row = vi.mocked(tables.claims.insert).mock.calls[0][0] as Record<string, unknown>;
+    const row = (tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
     expect(row).toMatchObject({ amount_cents: 2540, payout_type: "paynow_mobile", payout_masked: "Mobile •••• 4567", vendor_name: null });
     expect(decryptPayout(row.payout_enc as string, ME)).toEqual({ type: "paynow_mobile", name: "Tan Ah Kow", proxy: "+6591234567" });
     expect(row).not.toHaveProperty("status");
