@@ -96,7 +96,7 @@ create table public.claims (
   payment_reference text,
   -- A random id the claim form makes once per claim: a retried submission can't create a second
   -- claim for the same expense (the unique index below refuses it).
-  submission_id uuid,
+  submission_id uuid not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check ((kind = 'invoice') = (vendor_name is not null)),
@@ -495,6 +495,32 @@ revoke all on function public.decide_claim(uuid, boolean, text), public.mark_pai
   public.claim_payout_enc(uuid) from public, anon;
 grant execute on function public.decide_claim(uuid, boolean, text), public.mark_paid(uuid, text),
   public.claim_payout_enc(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------------------------
+-- Budgets: a pool and its amount are saved together, in one transaction, as the admin (RLS).
+-- p_id null creates one. Returns the pool's id.
+create function public.admin_save_pool(p_id uuid, p_name text, p_kind public.pool_kind, p_division uuid,
+  p_allocated_cents bigint)
+returns uuid language plpgsql security invoker set search_path = '' as $$
+declare
+  v_id uuid := p_id;
+begin
+  if v_id is null then
+    insert into public.pools (name, kind, division_id) values (btrim(p_name), p_kind, p_division)
+    returning id into v_id;
+  else
+    update public.pools p set name = btrim(p_name), kind = p_kind, division_id = p_division where p.id = v_id;
+    if not found then
+      raise exception 'That budget wasn''t found.' using errcode = 'P0002';
+    end if;
+  end if;
+  insert into public.pool_budgets (pool_id, allocated_cents) values (v_id, p_allocated_cents)
+  on conflict (pool_id) do update set allocated_cents = excluded.allocated_cents;
+  return v_id;
+end $$;
+
+revoke all on function public.admin_save_pool(uuid, text, public.pool_kind, uuid, bigint) from public, anon;
+grant execute on function public.admin_save_pool(uuid, text, public.pool_kind, uuid, bigint) to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
 -- People: a member and their divisions are saved together, in one transaction. SECURITY INVOKER,

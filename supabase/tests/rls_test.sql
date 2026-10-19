@@ -83,9 +83,9 @@ select pg_temp.login('00000000-0000-4000-8000-000000000b01');
 
 select lives_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 taxi', 2500,
-          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'paynow_mobile', 'Mobile •••• 4567', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'paynow_mobile', 'Mobile •••• 4567', 'v1.a.b.c', gen_random_uuid())
 $$, 'a volunteer submits a claim');
 
 select results_eq(
@@ -95,45 +95,52 @@ select results_eq(
 
 select throws_ok($$
   insert into public.claims (kind, pool_id, category_id, description, amount_cents, vendor_name,
-                             attachment_paths, payout_type, payout_masked, payout_enc)
+                             attachment_paths, payout_type, payout_masked, payout_enc, submission_id)
   values ('invoice', '20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 invoice',
-          9000, 'Hall', array['00000000-0000-4000-8000-000000000b01/a/i.pdf'], 'paynow_uen', 'UEN •••• 123A', 'v1.a.b.c')
+          9000, 'Hall', array['00000000-0000-4000-8000-000000000b01/a/i.pdf'], 'paynow_uen', 'UEN •••• 123A', 'v1.a.b.c', gen_random_uuid())
 $$, '42501', 'Only core personnel can submit vendor invoices.', 'volunteers cannot submit invoices');
 
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e03', '30000000-0000-4000-8000-000000000001', 'v1 closed', 100,
-          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c', gen_random_uuid())
 $$, 'P0001', 'That budget is not open for claims.', 'closed budgets refuse claims');
 
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000002', 'v1 hidden cat', 100,
-          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c', gen_random_uuid())
 $$, 'P0001', 'Choose a valid category.', 'hidden categories refuse claims');
 
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 other file', 100,
-          array['00000000-0000-4000-8000-000000000b02/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b02/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c', gen_random_uuid())
 $$, '42501', 'Invalid attachment.', 'claims cannot attach someone else''s files');
 
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 no file', 100,
-          array['00000000-0000-4000-8000-000000000b01/never/uploaded.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b01/never/uploaded.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c', gen_random_uuid())
 $$, 'P0001', 'Upload the receipt first.', 'claims refuse receipts that were never uploaded');
 
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, expense_date, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 future', 100,
-          (now() + interval '3 days')::date, array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+          (now() + interval '3 days')::date, array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c', gen_random_uuid())
 $$, 'P0001', 'The purchase date can''t be in the future.', 'purchases can''t be in the future');
+
+select throws_ok($$
+  insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
+                             payout_type, payout_masked, payout_enc)
+  values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'v1 no id', 100,
+          array['00000000-0000-4000-8000-000000000b01/a/r.jpg'], 'bank', 'DBS •••• 1234', 'v1.a.b.c')
+$$, '23502', null, 'every claim needs a submission id (so retries can always be recognised)');
 
 select throws_ok($$ select payout_enc from public.claims $$, '42501', null,
   'payout_enc is not readable through the Data API');
@@ -162,9 +169,9 @@ select results_eq($$ select role::text from public.members where id = '00000000-
 select pg_temp.login('00000000-0000-4000-8000-000000000b02');
 select lives_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e02', '30000000-0000-4000-8000-000000000001', 'v2 food', 4000,
-          array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c', gen_random_uuid())
 $$, 'a second volunteer submits a claim');
 select is_empty($$ select id from public.claims where description = 'v1 taxi' $$,
   'volunteers cannot see other people''s claims');
@@ -205,10 +212,10 @@ select throws_ok($$ select * from public.decide_claim(pg_temp.claim('v1 taxi'), 
 
 select lives_ok($$
   insert into public.claims (kind, pool_id, category_id, description, amount_cents, vendor_name, due_date,
-                             attachment_paths, payout_type, payout_masked, payout_enc)
+                             attachment_paths, payout_type, payout_masked, payout_enc, submission_id)
   values ('invoice', '20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'c1 venue',
           30000, 'The Hall', '2026-11-01', array['00000000-0000-4000-8000-000000000c01/c/i.pdf'],
-          'paynow_uen', 'UEN •••• 123A', 'v1.a.b.c')
+          'paynow_uen', 'UEN •••• 123A', 'v1.a.b.c', gen_random_uuid())
 $$, 'core members submit vendor invoices');
 select results_eq($$ select status::text from public.claims where description = 'c1 venue' $$,
   $$ values ('pending_finance') $$, 'core members'' claims go straight to Finance');
@@ -245,9 +252,9 @@ select results_eq($$ select allocated_cents, pending_cents, approved_cents, paid
   $$ values (100000::bigint, 30000::bigint, 0::bigint, 2500::bigint) $$, 'budget totals are computed from claims');
 select lives_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e02', '30000000-0000-4000-8000-000000000001', 'fin lunch', 1500,
-          array['00000000-0000-4000-8000-000000000f01/d/r.jpg'], 'paynow_mobile', 'Mobile •••• 1111', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000f01/d/r.jpg'], 'paynow_mobile', 'Mobile •••• 1111', 'v1.a.b.c', gen_random_uuid())
 $$, 'Finance submits a claim');
 select lives_ok($$ select * from public.decide_claim(pg_temp.claim('fin lunch'), true) $$,
   'Finance members may approve their own claims');
@@ -257,9 +264,9 @@ reset role;
 select pg_temp.login('00000000-0000-4000-8000-000000000a01');
 select lives_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e01', '30000000-0000-4000-8000-000000000001', 'adm stamps', 800,
-          array['00000000-0000-4000-8000-000000000a01/e/r.jpg'], 'paynow_mobile', 'Mobile •••• 2222', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000a01/e/r.jpg'], 'paynow_mobile', 'Mobile •••• 2222', 'v1.a.b.c', gen_random_uuid())
 $$, 'an admin submits a claim');
 select throws_ok($$ select * from public.decide_claim(pg_temp.claim('adm stamps'), true) $$, '42501', null,
   'admins without the finance flag cannot approve their own claims');
@@ -278,6 +285,11 @@ select results_eq($$ select division_id::text from public.division_members where
 select lives_ok($$ select public.admin_update_member('00000000-0000-4000-8000-000000000c01', 'core', false, true,
                    array['10000000-0000-4000-8000-000000000d01', '10000000-0000-4000-8000-000000000d01']::uuid[]) $$,
   'duplicate divisions are saved once');
+select lives_ok($$ select public.admin_save_pool(null, 'RLS Pool New', 'general', '10000000-0000-4000-8000-000000000d01', 7500) $$,
+  'admins save a budget and its amount together');
+select throws_ok($$ select public.admin_save_pool(null, 'RLS Pool Bad', 'general', '10000000-0000-4000-8000-000000000d01', -1) $$,
+  '23514', null, 'a bad amount saves neither the budget nor its amount');
+select is_empty($$ select id from public.pools where name = 'RLS Pool Bad' $$, 'so no budget without an amount is left behind');
 select lives_ok($$ select public.admin_update_member('00000000-0000-4000-8000-000000000b02', 'volunteer', false, false, '{}') $$,
   'admins deactivate members');
 reset role;
@@ -289,9 +301,9 @@ select is_empty($$ select * from public.pools $$, 'deactivated members see no po
 select is_empty($$ select * from public.members $$, 'deactivated members no longer read even their own row');
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc)
+                             payout_type, payout_masked, payout_enc, submission_id)
   values ('20000000-0000-4000-8000-000000000e02', '30000000-0000-4000-8000-000000000001', 'v2 again', 100,
-          array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c')
+          array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c', gen_random_uuid())
 $$, '42501', 'Your account is not active.', 'deactivated members cannot claim');
 reset role;
 
