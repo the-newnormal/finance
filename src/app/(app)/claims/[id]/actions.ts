@@ -76,3 +76,18 @@ export async function markPaid(id: string, reference: string, accountId: string)
   revalidatePath("/payouts");
   return { ok: true };
 }
+
+// Adds receipts to an imported claim (attach_claim_files: Finance only, imported claims only, the
+// caller's own uploads).
+export async function attachClaimFiles(id: string, paths: string[]): Promise<ActionResult> {
+  await requireMember();
+  if (!uuid.safeParse(id).success) return { ok: false, error: "Claim not found." };
+  if (!paths.length || paths.length > 5 || paths.some((p) => typeof p !== "string" || p.length > 300)) {
+    return { ok: false, error: "Choose up to 5 files." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("attach_claim_files", { p_claim: id, p_paths: paths });
+  if (error) return refusal(error);
+  revalidatePath(`/claims/${id}`);
+  return { ok: true };
+}

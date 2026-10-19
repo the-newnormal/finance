@@ -11,7 +11,7 @@ import { buildPayNowPayload } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { CLAIM_COLUMNS, isFinance, PAYOUT_LABEL, type Claim, type ClaimEvent, type Member } from "@/lib/types";
-import { MarkPaidForm, ReviewActions } from "./claim-actions";
+import { AttachFiles, MarkPaidForm, ReviewActions } from "./claim-actions";
 
 export const metadata = { title: "Claim" };
 
@@ -39,7 +39,10 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
     supabase.from("categories").select("name").eq("id", claim.category_id).maybeSingle(),
     supabase.from("claim_events").select("id, action, actor_name, note, at").eq("claim_id", claim.id).order("at").order("id"),
     // Signed as the viewer, so storage RLS decides; links last ten minutes.
-    supabase.storage.from("receipts").createSignedUrls(claim.attachment_paths, 600),
+    // Imported claims may have no files yet.
+    claim.attachment_paths.length
+      ? supabase.storage.from("receipts").createSignedUrls(claim.attachment_paths, 600)
+      : { data: [] as { path: string | null; signedUrl: string }[], error: null },
   ]);
   for (const r of [budget, category, events, files]) if (r.error) throw new Error(`claim page read failed`);
   const ref = `NN-${claim.id.slice(0, 8).toUpperCase()}`;
@@ -69,6 +72,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
               <div className="flex flex-wrap items-center gap-3">
                 <StatusBadge status={claim.status} />
                 <span className="text-xs text-ink-soft">{ref}</span>
+                {claim.imported && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] text-ink-soft">Imported</span>}
               </div>
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <CardTitle className="text-3xl">{formatSGD(claim.amount_cents)}</CardTitle>
@@ -89,7 +93,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                 ) : (
                   <Item label="Date of purchase">{claim.expense_date ? formatDate(claim.expense_date) : "—"}</Item>
                 )}
-                <Item label="Pay to">{PAYOUT_LABEL[claim.payout_type]} · {claim.payout_masked}</Item>
+                <Item label="Pay to">{claim.payout_type ? `${PAYOUT_LABEL[claim.payout_type]} · ${claim.payout_masked}` : "Paid before this app"}</Item>
                 <Item label="Description" className="sm:col-span-2"><p className="whitespace-pre-wrap">{claim.description}</p></Item>
                 {claim.rejection_reason && <Item label="Reason for rejection" className="sm:col-span-2">{claim.rejection_reason}</Item>}
               </dl>
@@ -99,6 +103,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
           <Card>
             <CardHeader><CardTitle>{claim.kind === "invoice" ? "Invoice" : "Receipts"}</CardTitle></CardHeader>
             <CardContent className="grid gap-3 sm:grid-cols-2">
+              {!claim.attachment_paths.length && <p className="text-sm text-ink-soft sm:col-span-2">No files yet.</p>}
               {(files.data ?? []).map((f) => {
                 const name = (f.path ?? "").split("/").pop()?.replace(/^\d+-/, "") ?? "file";
                 return f.signedUrl ? (
@@ -110,6 +115,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                   <div key={f.path} className="rounded-xl border border-line p-3 text-sm text-ink-soft">{name} (unavailable)</div>
                 );
               })}
+              {may.attach && <AttachFiles claimId={claim.id} uid={me.id} room={5 - claim.attachment_paths.length} />}
             </CardContent>
           </Card>
         </div>
@@ -214,6 +220,7 @@ function permissions(me: Member, c: Claim, ledDivisions: string[]) {
     decide: reviews || finalises,
     seePayout: isFinance(me) && (c.status === "pending_finance" || c.status === "approved"),
     markPaid: isFinance(me) && c.status === "approved",
+    attach: isFinance(me) && c.imported && c.attachment_paths.length < 5,
   };
 }
 
