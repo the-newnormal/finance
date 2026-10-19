@@ -63,7 +63,7 @@ insert into public.categories (id, name, active) values
 -- ---------- signed out ----------
 set local role anon;
 set local request.jwt.claims to '{"role": "anon"}';
-select throws_ok($$ select * from public.claims $$, '42501', null, 'anon cannot read claims');
+select throws_ok($$ select id from public.claims $$, '42501', null, 'anon cannot read claims');
 select throws_ok($$ select * from public.pools $$, '42501', null, 'anon cannot read pools');
 reset role;
 
@@ -139,7 +139,7 @@ select lives_ok($$
   values ('20000000-0000-4000-8000-000000000e02', '30000000-0000-4000-8000-000000000001', 'v2 food', 4000,
           array['00000000-0000-4000-8000-000000000b02/b/r.jpg'], 'bank', 'DBS •••• 9999', 'v1.a.b.c')
 $$, 'a second volunteer submits a claim');
-select is_empty($$ select * from public.claims where description = 'v1 taxi' $$,
+select is_empty($$ select id from public.claims where description = 'v1 taxi' $$,
   'volunteers cannot see other people''s claims');
 reset role;
 
@@ -226,7 +226,7 @@ reset role;
 
 -- ---------- deactivated v2 ----------
 select pg_temp.login('00000000-0000-4000-8000-000000000b02');
-select is_empty($$ select * from public.claims $$, 'deactivated members see no claims');
+select is_empty($$ select id from public.claims $$, 'deactivated members see no claims');
 select is_empty($$ select * from public.pools $$, 'deactivated members see no pools');
 select throws_ok($$
   insert into public.claims (pool_id, category_id, description, amount_cents, attachment_paths,
