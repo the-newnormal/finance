@@ -16,6 +16,7 @@ const ALLOWED = new Set([
   "src/lib/supabase/admin-imports.test.ts",
   "src/app/(app)/admin/people/actions.ts", // inviteMember, setActive
   "src/app/(app)/admin/people/actions.test.ts",
+  "src/lib/notify.ts", // looks up a claimant's email to notify them (decide_claim never returns it)
 ]);
 
 const SOURCE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;

@@ -42,7 +42,7 @@ A claim moves `pending_review` → `pending_finance` → `approved` → `paid`, 
 
 ## Security
 - Never commit secrets (`.env*` is git-ignored; use `.env.example`).
-- Never expose the service-role key to the client. `src/lib/supabase/admin.ts` is the only service-role client, used only by the People page's actions (`src/app/(app)/admin/people/actions.ts`) to invite, deactivate and reactivate logins (`admin-imports.test.ts` lists who may import it).
+- Never expose the service-role key to the client. `src/lib/supabase/admin.ts` is the only service-role client, used only by the People page's actions (`src/app/(app)/admin/people/actions.ts`) to invite, deactivate and reactivate logins, and by `src/lib/notify.ts` to look up a claimant's email for a notification (`admin-imports.test.ts` lists who may import it).
 - Never disable auth checks or weaken RLS without explicit review.
 - Logs carry codes and counts only: never names, emails, amounts or payout details.
 
