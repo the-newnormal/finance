@@ -119,20 +119,34 @@ begin
     if v_member.id is null then
       raise exception 'Row %: no member has the email %. Add them on the People page first.', v_n, v_row ->> 'email';
     end if;
-    select * into v_budget from public.budgets b where lower(b.name) = lower(btrim(v_row ->> 'budget'));
-    if v_budget.id is null then
-      raise exception 'Row %: no budget is called "%".', v_n, v_row ->> 'budget';
-    end if;
-    select bc.category_id into v_category from public.budget_categories bc
-      join public.categories c on c.id = bc.category_id
-     where bc.budget_id = v_budget.id and lower(c.name) = lower(btrim(v_row ->> 'category'));
-    if v_category is null then
-      raise exception 'Row %: the budget "%" doesn''t provide for the category "%".', v_n, v_budget.name, v_row ->> 'category';
-    end if;
-    select * into v_account from public.bank_accounts a where lower(a.name) = lower(btrim(v_row ->> 'account'));
-    if v_account.id is null then
-      raise exception 'Row %: no bank account is called "%".', v_n, v_row ->> 'account';
-    end if;
+    begin
+      select * into strict v_budget from public.budgets b
+       where lower(b.name) = lower(btrim(v_row ->> 'budget'));
+    exception
+      when no_data_found then
+        raise exception 'Row %: no budget is called "%".', v_n, v_row ->> 'budget';
+      when too_many_rows then
+        raise exception 'Row %: more than one budget is called "%". Rename one before importing.', v_n, v_row ->> 'budget';
+    end;
+    begin
+      select bc.category_id into strict v_category from public.budget_categories bc
+        join public.categories c on c.id = bc.category_id
+       where bc.budget_id = v_budget.id and lower(c.name) = lower(btrim(v_row ->> 'category'));
+    exception
+      when no_data_found then
+        raise exception 'Row %: the budget "%" doesn''t provide for the category "%".', v_n, v_budget.name, v_row ->> 'category';
+      when too_many_rows then
+        raise exception 'Row %: the budget "%" provides more than one category called "%". Rename one before importing.', v_n, v_budget.name, v_row ->> 'category';
+    end;
+    begin
+      select * into strict v_account from public.bank_accounts a
+       where lower(a.name) = lower(btrim(v_row ->> 'account'));
+    exception
+      when no_data_found then
+        raise exception 'Row %: no bank account is called "%".', v_n, v_row ->> 'account';
+      when too_many_rows then
+        raise exception 'Row %: more than one bank account is called "%". Rename one before importing.', v_n, v_row ->> 'account';
+    end;
 
     v_amount := (v_row ->> 'amount_cents')::bigint;
     if v_amount is null or v_amount <= 0 or v_amount > 100000000 then
