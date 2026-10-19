@@ -293,7 +293,7 @@ reset role;
 select pg_temp.login('0c000000-0000-4000-8000-000000000002');
 select is_empty($$ select * from public.members $$, 'deactivated members see no member rows');
 select is_empty($$ select * from public.budgets $$, 'deactivated members see no budgets');
-select is_empty($$ select * from public.claims $$, 'deactivated members see no claims');
+select is_empty($$ select id from public.claims $$, 'deactivated members see no claims');
 select is_empty($$ select * from public.bank_accounts $$, 'deactivated Finance sees no bank accounts');
 reset role;
 
