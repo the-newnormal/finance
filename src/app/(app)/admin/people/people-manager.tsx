@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { inviteMember, updateMember } from "./actions";
+import { inviteMember, resendInvite, updateMember } from "./actions";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,8 @@ export function PeopleManager({ people: users, divisions, meId }: { people: U[];
                   </label>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" disabled={pending} onClick={() => run(() => updateMember(u.id, editing), `Updated ${u.name}.`, () => setEditing((cur) => (cur?.id === u.id ? null : cur)))}>Save</Button>
+                    <Button size="sm" variant="outline" disabled={pending}
+                      onClick={() => run(() => resendInvite(u.id), `A new invite is on its way to ${u.email}.`)}>Resend invite</Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
                   </div>
                 </div>

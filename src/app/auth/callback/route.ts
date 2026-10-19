@@ -45,9 +45,19 @@ export async function GET(request: NextRequest) {
   return linkFailed(origin, next);
 }
 
+// Only our own Continue button may POST here: another site could otherwise submit *its* valid token
+// and sign a visitor into the attacker's account (login CSRF). Browsers send Origin on form POSTs,
+// and Sec-Fetch-Site everywhere modern; either must say same-origin.
+function fromThisSite(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  if (origin) return origin === request.nextUrl.origin;
+  return request.headers.get("sec-fetch-site") === "same-origin";
+}
+
 // The Continue button on /auth/confirm: uses the one-time token and signs in.
 export async function POST(request: NextRequest) {
   const { origin } = request.nextUrl;
+  if (!fromThisSite(request)) return linkFailed(origin, "/claims");
   const form = await request.formData();
   const tokenHash = String(form.get("token_hash") ?? "");
   const type = String(form.get("type") ?? "email");

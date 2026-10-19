@@ -43,6 +43,13 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
   const service = serviceClient();
   if ("ok" in service) return service;
 
+  // Someone already on People: never invite them again here (Supabase would return their existing
+  // login, and a failed add must not then delete it). Use Resend invite instead.
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase.from("members").select("id").eq("email", v.email).maybeSingle();
+  if (existingError) return { ok: false, error: "The account couldn't be created. Try again." };
+  if (existing) return { ok: false, error: "That person already has an account. Use Resend invite if they can't sign in." };
+
   const { data, error } = await service.auth.admin.inviteUserByEmail(v.email, {
     redirectTo: `${site}/auth/callback?next=/claims`,
   });
@@ -56,7 +63,6 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
   }
 
   // The member row and their divisions, in one transaction (admin_add_member, as the admin).
-  const supabase = await createClient();
   const { error: addError } = await supabase.rpc("admin_add_member", {
     p_id: data.user.id,
     p_email: v.email,
@@ -67,12 +73,20 @@ export async function inviteMember(input: z.input<typeof newMember>): Promise<Re
   });
   if (addError) {
     console.error("admin_add_member failed", { code: addError.code });
-    // Undo the login, retrying once; if that fails too, say so: a login without a member row can't
-    // be re-invited or seen on this page.
-    let undo = await service.auth.admin.deleteUser(data.user.id);
-    if (undo.error) undo = await service.auth.admin.deleteUser(data.user.id);
-    if (undo.error) {
-      console.error("invite rollback failed", { code: undo.error.code });
+    // 23505: a member row appeared for this login meanwhile; it's someone's account, so leave it.
+    if (addError.code === "23505") return { ok: false, error: "That person already has an account." };
+    // Undo the login this invite made (no member row had it, checked above), retrying once; if that
+    // fails too, say so: a login without a member row can't be re-invited or seen on this page.
+    const undo = async () => {
+      try {
+        return (await service.auth.admin.deleteUser(data.user.id)).error;
+      } catch (e) {
+        return e as { code?: string };
+      }
+    };
+    const undoError = (await undo()) && (await undo());
+    if (undoError) {
+      console.error("invite rollback failed", { code: undoError.code ?? "thrown" });
       return {
         ok: false,
         error: `The account couldn't be created, and the login made for ${v.email} couldn't be removed. Delete it in Supabase → Authentication → Users, then try again.`,
@@ -124,6 +138,39 @@ export async function updateMember(id: string, input: z.input<typeof access> & {
   if (banError) {
     console.error("ban update failed", { code: banError.code });
     return { ok: false, error: "Saved, but their sign-in couldn't be updated. Save again to retry." };
+  }
+  return { ok: true };
+}
+
+// Sends a new invite to someone who hasn't signed in yet (invite links expire after an hour, and
+// until they've used one, Supabase won't email them an ordinary sign-in link). Only for people who
+// already have a member row and whose login is still unconfirmed.
+export async function resendInvite(id: string): Promise<Result> {
+  await requireAdmin();
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "That person wasn't found." };
+  const site = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!site) return { ok: false, error: "NEXT_PUBLIC_SITE_URL is not set, so invite links can't be built." };
+
+  const supabase = await createClient();
+  const { data: member, error } = await supabase.from("members").select("email, active").eq("id", id).maybeSingle();
+  if (error || !member) return { ok: false, error: "That person wasn't found." };
+  if (!member.active) return { ok: false, error: "Reactivate their account first." };
+
+  const service = serviceClient();
+  if ("ok" in service) return service;
+  const { data: login } = await service.auth.admin.getUserById(id);
+  if (login?.user?.email_confirmed_at) {
+    return { ok: false, error: "They've already signed in before: they can request a sign-in link at the login page." };
+  }
+  const { error: inviteError } = await service.auth.admin.inviteUserByEmail(member.email as string, {
+    redirectTo: `${site}/auth/callback?next=/claims`,
+  });
+  if (inviteError) {
+    if (inviteError.code === "over_email_send_rate_limit") {
+      return { ok: false, error: "Too many emails were sent just now. Try again in a few minutes." };
+    }
+    console.error("resend invite failed", { code: inviteError.code });
+    return { ok: false, error: "The invite couldn't be sent. Try again." };
   }
   return { ok: true };
 }

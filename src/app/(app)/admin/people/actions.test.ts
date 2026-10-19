@@ -15,10 +15,17 @@ const USER = "00000000-0000-4000-8000-000000000001";
 const DIV = "10000000-0000-4000-8000-000000000001";
 const auth = { inviteUserByEmail: vi.fn(), deleteUser: vi.fn(), updateUserById: vi.fn() };
 const rpc = vi.fn();
-// What members.active reads as after the save (updateMember bans to match it).
+// What members.active reads as after the save (updateMember bans to match it), and whether a member
+// row already has the invited email (inviteMember checks first).
 let savedActive: boolean;
+let existingMember: { id: string } | null;
 const from = vi.fn(() => {
-  const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: { active: savedActive }, error: null }) };
+  let cols = "";
+  const q = {
+    select: (c: string) => ((cols = c), q),
+    eq: () => q,
+    maybeSingle: async () => ({ data: cols === "id" ? existingMember : { active: savedActive }, error: null }),
+  };
   return q;
 });
 
@@ -26,6 +33,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://finance.test");
   rpc.mockReset().mockResolvedValue({ error: null });
   savedActive = false;
+  existingMember = null;
   vi.mocked(createClient).mockResolvedValue({ rpc, from } as never);
   vi.mocked(createServiceRoleClient).mockReturnValue({ auth: { admin: auth } } as never);
   auth.inviteUserByEmail.mockReset().mockResolvedValue({ data: { user: { id: USER } }, error: null });
@@ -64,6 +72,26 @@ describe("inviteMember", () => {
     const res = await inviteMember(person);
     expect(auth.deleteUser).toHaveBeenCalledTimes(2);
     expect(res.ok).toBe(false);
+    expect(!res.ok && res.error).toContain("couldn't be removed");
+  });
+
+  it("never re-invites someone already on People (a failed add would delete their login)", async () => {
+    existingMember = { id: USER };
+    expect(await inviteMember(person)).toEqual({ ok: false, error: "That person already has an account. Use Resend invite if they can't sign in." });
+    expect(auth.inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("leaves the login alone if the member row appeared meanwhile (23505)", async () => {
+    rpc.mockResolvedValue({ error: { code: "23505" } });
+    expect(await inviteMember(person)).toEqual({ ok: false, error: "That person already has an account." });
+    expect(auth.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("treats a thrown rollback like a failed one", async () => {
+    rpc.mockResolvedValue({ error: { code: "23503" } });
+    auth.deleteUser.mockRejectedValue(new Error("network"));
+    const res = await inviteMember(person);
+    expect(auth.deleteUser).toHaveBeenCalledTimes(2);
     expect(!res.ok && res.error).toContain("couldn't be removed");
   });
 

@@ -13,7 +13,7 @@ const get = (query: string) => GET(new NextRequest(`${ORIGIN}/auth/callback${que
 function post(fields: Record<string, string>) {
   const body = new FormData();
   for (const [k, v] of Object.entries(fields)) body.set(k, v);
-  return POST(new NextRequest(`${ORIGIN}/auth/callback`, { method: "POST", body }));
+  return POST(new NextRequest(`${ORIGIN}/auth/callback`, { method: "POST", body, headers: { origin: ORIGIN } }));
 }
 function location(response: Response) {
   expect(response.status).toBe(303);
@@ -57,6 +57,26 @@ describe("GET /auth/callback", () => {
 });
 
 describe("POST /auth/callback", () => {
+  const forged = (headers: Record<string, string>) => {
+    const body = new FormData();
+    body.set("token_hash", "attackers-token");
+    return POST(new NextRequest(`${ORIGIN}/auth/callback`, { method: "POST", body, headers }));
+  };
+
+  it.each([
+    [{ origin: "https://evil.example" }],
+    [{ "sec-fetch-site": "cross-site" }],
+    [{}],
+  ])("refuses a POST from another site (%j)", async (headers) => {
+    expect(location(await forged(headers))).toBe(`${ORIGIN}/login?error=link&next=%2Fclaims`);
+    expect(verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it("accepts a same-origin POST without an Origin header (Sec-Fetch-Site)", async () => {
+    await forged({ "sec-fetch-site": "same-origin" });
+    expect(verifyOtp).toHaveBeenCalled();
+  });
+
   it("verifies the token and continues to next", async () => {
     expect(location(await post({ token_hash: "abc", type: "email", next: "/claims/new" }))).toBe(`${ORIGIN}/claims/new`);
     expect(verifyOtp).toHaveBeenCalledWith({ type: "email", token_hash: "abc" });

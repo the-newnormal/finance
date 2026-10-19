@@ -65,17 +65,10 @@ export async function savePool(id: string | null, input: z.input<typeof poolInpu
   const allocated_cents = parseBudgetToCents(v.allocated);
   if (allocated_cents === null) return { ok: false, error: "Enter a valid budget, e.g. 1500 or 1500.00." };
 
+  // The budget and its amount in one transaction, as the admin (admin_save_pool; RLS decides).
   const supabase = await createClient();
-  const pool = { name: v.name, kind: v.kind, division_id: v.divisionId };
-  let poolId = id;
-  if (poolId) {
-    const { error } = await supabase.from("pools").update(pool).eq("id", poolId);
-    if (error) return done(error, "budget");
-  } else {
-    const { data, error } = await supabase.from("pools").insert(pool).select("id").single();
-    if (error) return done(error, "budget");
-    poolId = data.id as string;
-  }
-  const { error } = await supabase.from("pool_budgets").upsert({ pool_id: poolId, allocated_cents });
+  const { error } = await supabase.rpc("admin_save_pool", {
+    p_id: id, p_name: v.name, p_kind: v.kind, p_division: v.divisionId, p_allocated_cents: allocated_cents,
+  });
   return done(error, "budget");
 }
