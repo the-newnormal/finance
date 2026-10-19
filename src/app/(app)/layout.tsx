@@ -8,7 +8,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const links = [
     { href: "/claims", label: "My claims" },
     ...(canReview(me) ? [{ href: "/review", label: "Review" }, { href: "/budgets", label: "Budgets" }] : []),
-    ...(isFinance(me) ? [{ href: "/payouts", label: "Payouts" }] : []),
+    ...(isFinance(me) ? [{ href: "/payouts", label: "Payouts" }, { href: "/bank", label: "Bank" }] : []),
     ...(isAdmin(me) ? [{ href: "/admin/people", label: "People" }, { href: "/admin/setup", label: "Setup" }] : []),
   ];
   const roleLabel = [

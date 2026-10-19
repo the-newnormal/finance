@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { decideClaim, markPaid } from "./actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 
 export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: { claimId: string; canApprove: boolean; canReject: boolean; approveLabel: string }) {
   const router = useRouter();
@@ -45,10 +45,14 @@ export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: 
   );
 }
 
-export function MarkPaidForm({ claimId }: { claimId: string }) {
+export function MarkPaidForm({ claimId, accounts }: {
+  claimId: string;
+  accounts: { id: string; label: string }[];
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [ref, setRef] = useState("");
+  const [account, setAccount] = useState(accounts.length === 1 ? accounts[0].id : "");
   const [error, setError] = useState<string | null>(null);
   return (
     <form
@@ -56,17 +60,24 @@ export function MarkPaidForm({ claimId }: { claimId: string }) {
       onSubmit={(e) => {
         e.preventDefault();
         start(async () => {
-          const res = await markPaid(claimId, ref);
+          const res = await markPaid(claimId, ref, account);
           if (!res.ok) setError(res.error);
           else router.refresh();
         });
       }}
     >
       {error && <Alert>{error}</Alert>}
+      <Field label="Paid from" hint="Its expected balance on the Bank page goes down by this amount.">
+        <Select value={account} onChange={(e) => setAccount(e.target.value)} required>
+          <option value="" disabled>Choose an account…</option>
+          {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+        </Select>
+      </Field>
+      {!accounts.length && <Alert tone="info">Add the bank accounts on the Bank page first.</Alert>}
       <Field label="Bank transaction reference" hint="Once you've made the transfer, record it here. The claimant gets an e-mail.">
         <Input value={ref} onChange={(e) => setRef(e.target.value)} required />
       </Field>
-      <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Mark as paid"}</Button>
+      <Button type="submit" disabled={pending || !accounts.length}>{pending ? "Saving…" : "Mark as paid"}</Button>
     </form>
   );
 }

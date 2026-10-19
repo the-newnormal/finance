@@ -31,6 +31,7 @@ pnpm typecheck && pnpm lint && pnpm test
 - **Roles:** volunteer, core (reviews their divisions' claims and sees their budgets), admin, plus a Finance flag. See the table in [CLAUDE.md](CLAUDE.md).
 - **A claim** goes `pending_review` (volunteers only: one approval from a core member of the division) → `pending_finance` → `approved` → `paid`, or `rejected` with a reason. The claimant is emailed when it's approved, rejected or paid.
 - **Payouts:** Finance opens an approved claim to get a PayNow QR code (amount and reference `NN-XXXXXXXX` pre-filled), pays it in the bank app, then records the bank reference. Bank-transfer claims show the account details instead.
+- **Bank:** Finance records each account's opening balance, grants and other income, adjustments and transfers; paying a claim asks which account it came from. The Bank page shows each account's expected balance and compares it with the DBS balance you type in. Only Finance and admins see it.
 - **Payout details** are encrypted with AES-256-GCM (`PAYOUT_ENCRYPTION_KEY`) and the claimant's id as additional authenticated data; everyone but Finance sees only the last four characters.
 
 ## Deploying (Supabase + Vercel)
