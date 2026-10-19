@@ -3,6 +3,7 @@ reviews:
   request_changes_workflow: true      # can block a PR, not just comment
   auto_review:
     enabled: true
+    base_branches: [".*"]           # stacked PRs target other feature branches, not main
   path_filters:
     - "!**/*.generated.ts"
     - "!**/database.types.ts"
