@@ -166,8 +166,10 @@ if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then
   if [ -n "$backup" ] && ! cp "$index" "$backup" 2>/dev/null; then
     rm -f "$backup"; backup=
   fi
+  # Never stage or commit if the user's index cannot be restored safely.
+  [ -n "$backup" ] || say "nothing committed - could not back up the index on $branch"
   # Put the user's index back as it was before this run staged anything.
-  restore() { if [ -n "$backup" ]; then mv -f "$backup" "$index"; else git reset -q; fi; }
+  restore() { mv -f "$backup" "$index"; }
 
   # Leave out untracked nested repositories (clones) and Claude Code's
   # .claude/worktrees/ at any depth (even a stale one git no longer sees as a
