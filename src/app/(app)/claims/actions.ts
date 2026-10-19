@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { decryptPayout, encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
+import { assertPayoutKey, decryptPayout, encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
 import { parseAmountToCents } from "@/lib/money";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
@@ -83,10 +83,13 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
       .eq("member_id", me.id)
       .maybeSingle();
     if (!saved) return { ok: false, error: "Enter your payout details." };
-    // Copy them only if Finance will be able to read them (e.g. not saved under a retired key).
+    // Copy them only if Finance will be able to read them (e.g. not saved under a retired key). A
+    // missing or malformed server key is a configuration fault: let it throw, and keep their details.
+    assertPayoutKey();
     try {
       decryptPayout(saved.payout_enc, me.id);
     } catch {
+      console.error("saved payout unreadable", { code: "decrypt" });
       await supabase.from("member_payouts").delete().eq("member_id", me.id);
       return { ok: false, error: "Your saved payout details can no longer be used. Please enter them again." };
     }
@@ -118,13 +121,15 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
     })
     .select("id")
     .single();
+  let claimId = data?.id as string | undefined;
   if (error?.code === "23505") {
-    // Already submitted (a retry after a lost response): hand back that claim, don't make another.
+    // Already submitted (a retry after a lost response): use that claim, don't make another; the
+    // payout save below runs again, so payoutSaved reflects this attempt.
     const { data: existing } = await supabase
       .from("claims").select("id").eq("claimant_id", me.id).eq("submission_id", v.submissionId).maybeSingle();
-    if (existing) return { ok: true, id: existing.id as string, payoutSaved: true };
+    claimId = existing?.id as string | undefined;
   }
-  if (error) {
+  if (error && !claimId) {
     // P0001 and 42501 come from our own trigger, in words meant for the claimant.
     if (error.code === "P0001" || error.code === "42501") return { ok: false, error: error.message };
     console.error("claim insert failed", { code: error.code });
@@ -144,7 +149,7 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
   }
 
   revalidatePath("/claims");
-  return { ok: true, id: data.id as string, payoutSaved };
+  return { ok: true, id: claimId!, payoutSaved };
 }
 
 export async function forgetSavedPayout(): Promise<{ ok: boolean }> {

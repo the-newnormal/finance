@@ -24,6 +24,11 @@ function key() {
   return k;
 }
 
+/** Throws if the server's key is missing or malformed: a configuration fault, not bad data. */
+export function assertPayoutKey() {
+  key();
+}
+
 export function encryptPayout(details: PayoutDetails, ownerId: string): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key(), iv);

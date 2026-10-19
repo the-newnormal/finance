@@ -81,6 +81,19 @@ describe("submitClaim", () => {
     expect(await submitClaim(base)).toEqual({ ok: true, id: "claim-1", payoutSaved: true });
   });
 
+  it("on a retry, saves the payout details again and reports that attempt", async () => {
+    tables.claims = table({ data: { id: "claim-1" }, error: { code: "23505", message: "duplicate" } });
+    tables.member_payouts = table({ data: null, error: { code: "XX000" } });
+    expect(await submitClaim({ ...base, savePayout: true })).toEqual({ ok: true, id: "claim-1", payoutSaved: false });
+  });
+
+  it("keeps saved details when the server's key is missing (a config fault, not bad data)", async () => {
+    vi.stubEnv("PAYOUT_ENCRYPTION_KEY", "");
+    tables.member_payouts = table({ data: { payout_type: "bank", payout_masked: "DBS •••• 1234", payout_enc: "v1.x.y.z" }, error: null });
+    await expect(submitClaim({ ...base, payout: { type: "saved" } })).rejects.toThrow(/PAYOUT_ENCRYPTION_KEY/);
+    expect(tables.member_payouts.delete).not.toHaveBeenCalled();
+  });
+
   it("says when the details couldn't be remembered, though the claim went in", async () => {
     tables.member_payouts = table({ data: null, error: { code: "XX000" } });
     expect(await submitClaim({ ...base, savePayout: true })).toEqual({ ok: true, id: "claim-1", payoutSaved: false });
