@@ -1,6 +1,7 @@
 import "server-only";
 
 import nodemailer, { type Transporter } from "nodemailer";
+import { renderEmail, type Email } from "@/lib/email-template";
 
 /**
  * Sends e-mail over SMTP (Gmail by default: smtp.gmail.com:465 with an app
@@ -31,19 +32,8 @@ function getTransporter() {
   return transporter;
 }
 
-export async function sendEmail(to: string, subject: string, paragraphs: string[], link?: { href: string; label: string }) {
-  // Without the site's URL a relative link would be useless in an email, so leave the button out.
-  const appUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  const href = link ? (link.href.startsWith("http") ? link.href : appUrl ? appUrl + link.href : null) : null;
-  const html = `
-  <div style="font-family:Inter,Arial,sans-serif;color:#34363e;background:#f7f5f1;padding:32px">
-    <div style="max-width:520px;margin:auto;background:#fff;border-radius:16px;padding:28px">
-      <p style="font-family:Georgia,serif;font-size:22px;margin:0 0 16px">New Normal</p>
-      ${paragraphs.map((p) => `<p style="line-height:1.6;margin:0 0 12px">${escapeHtml(p)}</p>`).join("")}
-      ${href ? `<p style="margin-top:20px"><a href="${escapeHtml(href)}" style="background:#2f7f9b;color:#fff;padding:10px 18px;border-radius:999px;text-decoration:none">${escapeHtml(link!.label)}</a></p>` : ""}
-    </div>
-  </div>`;
-  const text = [...paragraphs, href ?? ""].join("\n\n");
+export async function sendEmail(to: string, email: Email) {
+  const { html, text } = renderEmail(email, process.env.NEXT_PUBLIC_SITE_URL || undefined);
 
   const t = getTransporter();
   if (!t) {
@@ -56,15 +46,11 @@ export async function sendEmail(to: string, subject: string, paragraphs: string[
     await t.sendMail({
       from: process.env.MAIL_FROM || process.env.SMTP_USER, // || so a blank MAIL_FROM falls back too
       to,
-      subject,
+      subject: email.subject,
       html,
       text,
     });
   } catch (e) {
     console.error("email failed", { code: (e as { code?: string })?.code ?? "unknown" });
   }
-}
-
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }

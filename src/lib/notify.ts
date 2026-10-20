@@ -1,5 +1,6 @@
 import "server-only";
 import { sendEmail } from "@/lib/email";
+import { claimDetails, type Email } from "@/lib/email-template";
 import { formatSGD } from "@/lib/money";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 
@@ -11,12 +12,7 @@ type Reviewer = { id: string; email: string; name: string };
 // other members' rows, and a function returning it could be called straight from the browser. So
 // the address is looked up here, on the server only, with the service role, and goes nowhere but
 // the email. Failures are logged as codes and never undo the decision.
-export async function emailClaimant(
-  claimantId: string,
-  subject: string,
-  paragraphs: string[],
-  link?: { href: string; label: string },
-) {
+export async function emailClaimant(claimantId: string, email: Email) {
   let service;
   try {
     service = createServiceRoleClient();
@@ -29,7 +25,7 @@ export async function emailClaimant(
     console.error("notify lookup failed", { code: error?.code ?? "not_found" });
     return;
   }
-  await sendEmail(data.email as string, subject, paragraphs, link);
+  await sendEmail(data.email as string, email);
 }
 
 // Active members with this role, optionally only among `ids`.
@@ -63,7 +59,7 @@ export async function emailReviewers(claimId: string, stage: "pending_review" | 
   }
   const { data: claim, error } = await service
     .from("claims")
-    .select("status, division_id, claimant_id, claimant_name, amount_cents, kind, vendor_name, budget_id")
+    .select("status, division_id, claimant_id, claimant_name, amount_cents, kind, description, vendor_name, budget_id")
     .eq("id", claimId)
     .maybeSingle();
   if (error || !claim) {
@@ -87,24 +83,26 @@ export async function emailReviewers(claimId: string, stage: "pending_review" | 
   if (reviewers && !reviewers.length) reviewers = (await activeMembers(service, "finance"))?.filter(notThem) ?? null;
   if (!reviewers?.length) return;
 
-  // The budget's name only makes the email clearer: if it can't be read, say "a budget", don't drop it.
+  // The budget's name only makes the email clearer: if it can't be read, leave it out, not the email.
   const { data: budget, error: budgetError } = await service.from("budgets").select("name").eq("id", claim.budget_id).maybeSingle();
   if (budgetError) console.error("notify reviewers lookup failed", { code: budgetError.code });
   const amount = formatSGD(Number(claim.amount_cents));
-  const budgetName = (budget?.name as string | undefined) ?? "a budget";
+  const budgetName = (budget?.name as string | undefined) ?? null;
   const invoice = claim.kind === "invoice";
-  const subject = claim.status === "pending_review"
-    ? "A claim is waiting for your review"
-    : `${invoice ? "An invoice" : "A claim"} is waiting for Finance approval`;
-  const what = claim.status === "pending_review"
-    ? `${claim.claimant_name} has submitted a claim of ${amount} for ${budgetName}. It needs a review before it goes to Finance for final approval.`
+  const review = claim.status === "pending_review";
+  const what = review
+    ? `${claim.claimant_name} has submitted a claim. Once you've reviewed it, it goes to Finance for final approval.`
     : invoice
-      ? `${claim.claimant_name} has submitted an invoice from ${claim.vendor_name} for ${amount} (${budgetName}). It needs Finance's approval before the vendor is paid.`
-      : `${claim.claimant_name}'s claim of ${amount} for ${budgetName} is waiting for Finance's final approval.`;
-  for (const r of reviewers) {
-    await sendEmail(r.email, subject, [`Hi ${r.name.split(" ")[0]},`, what], {
-      href: `/claims/${claimId}`,
-      label: invoice ? "Review invoice" : "Review claim",
-    });
-  }
+      ? `${claim.claimant_name} has submitted an invoice from ${claim.vendor_name}. It needs Finance's approval before the vendor is paid.`
+      : `${claim.claimant_name}'s claim is waiting for Finance's final approval.`;
+  const email: Omit<Email, "paragraphs"> = {
+    subject: review
+      ? `Claim to review: ${amount} from ${claim.claimant_name}`
+      : `${invoice ? "Invoice" : "Claim"} for final approval: ${amount} from ${claim.claimant_name}`,
+    badge: { label: review ? "Needs your review" : "Needs final approval", tone: "info" },
+    heading: review ? "A claim is waiting for your review" : `${invoice ? "An invoice" : "A claim"} is waiting for final approval`,
+    details: claimDetails({ description: claim.description as string, vendor: invoice ? (claim.vendor_name as string) : null, amount, budget: budgetName }),
+    link: { href: `/claims/${claimId}`, label: invoice ? "Review invoice" : "Review claim" },
+  };
+  for (const r of reviewers) await sendEmail(r.email, { ...email, paragraphs: [`Hi ${r.name.split(" ")[0]},`, what] });
 }
