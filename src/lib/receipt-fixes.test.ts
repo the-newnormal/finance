@@ -27,6 +27,15 @@ describe("receiptFixes", () => {
     ]);
   });
 
+  it("names a document it was given but couldn't make out", () => {
+    const blurry = { file: "File 2: photo.jpg", kind: "unreadable" as const, merchant: null, date: null, total: null,
+      reference: null, payment_method: null, items: null };
+    expect(receiptFixes({ verdict: "check_needed", findings: { documents: [blurry] } }))
+      .toEqual(["Couldn't read photo.jpg clearly. Please attach a clearer copy."]);
+    expect(receiptFixes({ verdict: "unreadable", findings: { documents: [blurry] } }))
+      .toEqual(["Couldn't read photo.jpg clearly. Please attach a clearer copy."]);
+  });
+
   it("leaves the reviewer's concerns out, and has nothing to say when the claim looks right", () => {
     expect(receiptFixes({ verdict: "check_needed", findings: { concerns: ["Signs of editing"] } })).toEqual([]);
     expect(receiptFixes({ verdict: "looks_right", findings: { document_kind: "receipt", fields } })).toEqual([]);

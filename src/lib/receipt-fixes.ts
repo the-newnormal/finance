@@ -2,7 +2,8 @@ import type { ReceiptCheck } from "@/lib/types";
 
 // What an AI receipt check found that the claimant can fix, in words for them: mandatory fields
 // the documents don't show or show unclearly, a total or date that doesn't match the claim, what
-// the claim rules require that is missing, and files that couldn't be read. Never the check's
+// the claim rules require that is missing, and files that couldn't be read (left out, or read but
+// illegible). Never the check's
 // "worth a look" concerns: those are for the reviewer, who decides whether to raise them.
 
 const DOCUMENT: Record<string, string> = { receipt: "receipt", paid_invoice: "invoice", vendor_invoice: "invoice" };
@@ -20,6 +21,8 @@ export function receiptFixes(check: Pick<ReceiptCheck, "verdict" | "findings">):
   const fields = (shown: "no" | "unclear") => (f.fields ?? []).filter((x) => x.shown === shown).map((x) => x.field);
   const missing = fields("no");
   const unclear = fields("unclear");
+  // A document Claude was given but couldn't make out, by its file name (without its "File N:" label).
+  const illegible = (f.documents ?? []).filter((d) => d.kind === "unreadable").map((d) => d.file.replace(/^File \d+:\s*/, ""));
   const fixes: string[] = [];
   if (missing.length) fixes.push(`${doc ? `The ${doc} doesn't` : "The documents don't"} show: ${missing.join(", ")}.`);
   if (unclear.length) fixes.push(`These can't be read clearly: ${unclear.join(", ")}.`);
@@ -27,7 +30,10 @@ export function receiptFixes(check: Pick<ReceiptCheck, "verdict" | "findings">):
   if (f.date_matches === "no") fixes.push("The date on the documents doesn't match the date on the claim.");
   for (const m of f.missing ?? []) if (m.trim()) fixes.push(sentence(m));
   for (const s of f.skipped ?? []) fixes.push(sentence(`Couldn't read ${s.name}: ${s.reason}`));
-  if (check.verdict === "unreadable" && !f.skipped?.length) fixes.push("The attached files couldn't be read. Please attach a clearer copy.");
+  for (const name of illegible) fixes.push(`Couldn't read ${name} clearly. Please attach a clearer copy.`);
+  if (check.verdict === "unreadable" && !f.skipped?.length && !illegible.length) {
+    fixes.push("The attached files couldn't be read. Please attach a clearer copy.");
+  }
   return fixes;
 }
 
