@@ -4,10 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/client";
 import { submitClaim } from "../actions";
+import { precheckClaim } from "../precheck-actions";
 import { ClaimForm } from "./claim-form";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("../actions", () => ({ submitClaim: vi.fn(), forgetSavedPayout: vi.fn() }));
+vi.mock("../precheck-actions", () => ({ precheckClaim: vi.fn() }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn() }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -52,6 +54,22 @@ async function attach(input: HTMLInputElement, name: string) {
 async function submit() {
   await act(async () => el.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
 }
+
+// A reimbursement with a receipt, ready to submit; uploads succeed and the claim goes in.
+async function fill() {
+  vi.mocked(createClient).mockReturnValue({ storage: { from: () => ({ upload: async () => ({ error: null }) }) } } as never);
+  vi.mocked(submitClaim).mockResolvedValue({ ok: true, id: "claim-1", payoutSaved: true });
+  await attach(fileInputs()[0], "receipt.jpg");
+  const set = (name: string, value: string) => { el.querySelector<HTMLInputElement>(`[name="${name}"]`)!.value = value; };
+  set("amount", "42.50");
+  set("expenseDate", "2026-10-01");
+  set("description", "Snacks for volunteers");
+  set("payeeName", "Tan Ah Kow");
+  set("proxy", "9123 4567");
+  el.querySelector<HTMLInputElement>('input[name="agreed"]')!.checked = true;
+}
+
+const submitButton = () => el.querySelector<HTMLButtonElement>('button[type="submit"]')!;
 
 describe("ClaimForm", () => {
   it("shows the rules for the claim in its declaration, and must be agreed to", () => {
@@ -106,6 +124,37 @@ describe("ClaimForm", () => {
       kind: "reimbursement", amount: "42.50", expenseDate: "2026-10-01", description: "Snacks for volunteers",
       attachmentPaths: [path], payout: { type: "paynow_mobile", name: "Tan Ah Kow", proxy: "9123 4567" }, agreed: true,
     }));
+    expect(precheckClaim).not.toHaveBeenCalled();
+  });
+
+  it("with the AI check on, shows what to fix before sending, then sends it as it is if they choose", async () => {
+    await render(true);
+    await fill();
+    vi.mocked(precheckClaim).mockResolvedValue({ ok: true, fixes: ["The receipt doesn't show: Payment Method."] });
+    await submit();
+    expect(precheckClaim).toHaveBeenCalledWith({
+      kind: "reimbursement", budgetId: "", categoryId: "", description: "Snacks for volunteers", amount: "42.50",
+      expenseDate: "2026-10-01", vendorName: undefined, attachmentPaths: [expect.stringMatching(/^u1\//)],
+    });
+    expect(submitClaim).not.toHaveBeenCalled();
+    expect(el.textContent).toContain("The receipt doesn't show: Payment Method.");
+    expect(submitButton().textContent).toBe("Submit as it is");
+    await submit();
+    expect(precheckClaim).toHaveBeenCalledTimes(1);
+    expect(submitClaim).toHaveBeenCalledTimes(1);
+  });
+
+  it("with the AI check on, sends straight away when there's nothing to fix or the check can't run", async () => {
+    await render(true);
+    await fill();
+    vi.mocked(precheckClaim).mockResolvedValue({ ok: true, fixes: [] });
+    await submit();
+    expect(submitClaim).toHaveBeenCalledTimes(1);
+    vi.mocked(precheckClaim).mockRejectedValue(new Error("offline"));
+    el.querySelector<HTMLInputElement>('[name="amount"]')!.value = "43.00";
+    await submit();
+    expect(precheckClaim).toHaveBeenCalledTimes(2);
+    expect(submitClaim).toHaveBeenCalledTimes(2);
   });
 
   it("clears the files when they change what they're attaching, but not on a repeat tap", async () => {

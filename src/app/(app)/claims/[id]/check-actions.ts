@@ -2,14 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { fetchAll } from "@/lib/fetch-all";
-import {
-  describeClaim, mediaTypeOf, prepareFiles, ReceiptCheckError, receiptCheckEnabled, runReceiptCheck, savedCheck,
-  type CheckResult, type ReceiptFile, type Skipped,
-} from "@/lib/receipt-check";
+import { receiptCheckEnabled } from "@/lib/receipt-check";
+import { checkClaimFiles } from "@/lib/receipt-check-claim";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import type { Claim, ClaimRule } from "@/lib/types";
+import type { Claim } from "@/lib/types";
 
 export type CheckActionResult = { ok: true } | { ok: false; error: string };
 
@@ -44,63 +41,20 @@ export async function checkReceipts(id: string): Promise<CheckActionResult> {
     return { ok: false, error: "This claim was made before claimants were told about the AI check, so it isn't checked." };
   }
 
-  // The check needs the claim's budget, category and rules: if any can't be read, it isn't run (a
-  // check without the rules would look complete when it isn't).
-  let budget, category, rules;
-  try {
-    [budget, category, rules] = await Promise.all([
-      supabase.from("budgets").select("name").eq("id", claim.budget_id).maybeSingle(),
-      supabase.from("categories").select("name").eq("id", claim.category_id).maybeSingle(),
-      fetchAll<Pick<ClaimRule, "title" | "body" | "applies_to">>((from, to) =>
-        supabase.from("claim_rules").select("title, body, applies_to").eq("active", true)
-          .order("sort_order").order("created_at").order("id").range(from, to)),
-    ]);
-  } catch {
-    return failed("rules_read");
-  }
-  if (budget.error || category.error) return failed("claim_details_read", (budget.error ?? category.error)?.code);
-
-  // A file that can't be downloaded is listed with the ones that can't be read; the rest are checked.
-  const downloads = await Promise.all(claim.attachment_paths.map(async (path): Promise<ReceiptFile | Skipped> => {
-    const name = path.split("/").pop()?.replace(/^[0-9a-f]+-/i, "") ?? "file";
-    const { data, error } = await supabase.storage.from("receipts").download(path);
-    if (error || !data) return { name, reason: "it couldn't be downloaded" };
-    return { name, mediaType: mediaTypeOf(name, data.type), data: new Uint8Array(await data.arrayBuffer()) };
-  }));
-  const notDownloaded = downloads.filter((f): f is Skipped => "reason" in f);
-  if (notDownloaded.length) console.error("receipt check files not downloaded", { count: notDownloaded.length });
-  const prepared = prepareFiles(downloads.filter((f): f is ReceiptFile => "data" in f));
-  const skipped = [...notDownloaded, ...prepared.skipped];
-
-  let result: CheckResult | null = null;
-  let model = "none";
-  if (prepared.blocks.length) {
-    const text = describeClaim(
-      {
-        kind: claim.kind, amount_cents: Number(claim.amount_cents), expense_date: claim.expense_date, vendor_name: claim.vendor_name,
-        description: claim.description,
-        budgetName: (budget.data?.name as string | undefined) ?? "—",
-        categoryName: (category.data?.name as string | undefined) ?? "—",
-      },
-      rules,
-      skipped,
-    );
-    try {
-      ({ result, model } = await runReceiptCheck(prepared.blocks, text));
-    } catch (e) {
-      const code = e instanceof ReceiptCheckError ? e.code : "unknown";
-      console.error("receipt check failed", { code });
-      return {
-        ok: false,
-        error: code === "refusal" ? "The AI declined to check these receipts. Check them yourself." : "The receipts couldn't be checked just now. Try again.",
-      };
-    }
+  const check = await checkClaimFiles(supabase, { ...claim, amount_cents: Number(claim.amount_cents) });
+  if (!check.ok) {
+    if (check.step !== "check") return failed(check.step, check.code);
+    console.error("receipt check failed", { code: check.code });
+    return {
+      ok: false,
+      error: check.code === "refusal" ? "The AI declined to check these receipts. Check them yourself." : "The receipts couldn't be checked just now. Try again.",
+    };
   }
 
-  const { verdict, summary, findings } = savedCheck(result, skipped);
+  const { verdict, summary, findings, filesChecked, model } = check;
   const { error: saveError } = await supabase.rpc("record_receipt_check", {
     p_claim: claim.id, p_verdict: verdict, p_summary: summary, p_findings: findings,
-    p_files_checked: prepared.checked.length, p_model: model,
+    p_files_checked: filesChecked, p_model: model,
   });
   if (saveError) {
     if (["P0001", "P0002", "42501"].includes(saveError.code ?? "")) return { ok: false, error: saveError.message };

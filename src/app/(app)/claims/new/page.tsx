@@ -8,6 +8,9 @@ import { canInvoice, type Budget, type Category, type ClaimRule, type PayoutType
 import { ClaimForm } from "./claim-form";
 
 export const metadata = { title: "New claim" };
+// With the AI receipt check on, submitting first has the files read (precheckClaim), which can take
+// most of a minute: 60 s is allowed on every Vercel plan, and the check gives up after 55 s.
+export const maxDuration = 60;
 
 type ClaimRuleView = Pick<ClaimRule, "id" | "title" | "body" | "applies_to" | "link_label" | "link_url">;
 
