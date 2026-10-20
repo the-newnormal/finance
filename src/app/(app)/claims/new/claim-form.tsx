@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Paperclip, X } from "lucide-react";
+import { FileText, ListChecks, Paperclip, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { forgetSavedPayout, submitClaim, type ClaimInput } from "../actions";
@@ -8,8 +8,9 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { DOCUMENT_FIELDS, type DocumentKind } from "@/lib/receipt-fields";
 import { createClient } from "@/lib/supabase/client";
-import { PAYOUT_LABEL, type PayoutType } from "@/lib/types";
+import { PAYOUT_LABEL, type ClaimRule, type PayoutType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -23,6 +24,8 @@ type Props = {
   provisions: { budget_id: string; category_id: string }[];
   categories: { id: string; name: string }[];
   savedPayout: { type: PayoutType; masked: string } | null;
+  /** The rules Finance shows on this form (claim_rules), in order. */
+  rules: Pick<ClaimRule, "id" | "title" | "body" | "applies_to" | "link_label" | "link_url">[];
 };
 
 const MAX_FILES = 5;
@@ -31,9 +34,13 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
 
 // A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
-type Attachment = { file: File; path?: string };
+// `proof` marks a proof of payment for an invoice the claimant paid; all of them are attached.
+type Attachment = { file: File; path?: string; proof?: boolean };
 
-export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budgets, provisions, categories, savedPayout }: Props) {
+// What the claimant ticks to submit, in TRP's words: it agrees to the declaration above it.
+const AGREEMENT = "I agree that all relevant information is accurate and free of errors, and I understand the processing timeline and terms above.";
+
+export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budgets, provisions, categories, savedPayout, rules }: Props) {
   const router = useRouter();
   const [budgetId, setBudgetId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -43,6 +50,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
     return categories.filter((c) => ids.has(c.id));
   }, [budgetId, provisions, categories]);
   const [kind, setKind] = useState<"reimbursement" | "invoice">("reimbursement");
+  // Only chooses which mandatory fields the form lists: a receipt, or an invoice they paid.
+  const [paidWith, setPaidWith] = useState<"receipt" | "paid_invoice">("receipt");
   const [files, setFiles] = useState<Attachment[]>([]);
   const [folder] = useState(() => `${uid}/${crypto.randomUUID()}`);
   const [payoutType, setPayoutType] = useState<PayoutType | "saved">(savedPayout ? "saved" : "paynow_mobile");
@@ -52,17 +61,30 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   const [submissionId] = useState(() => crypto.randomUUID());
 
   const isInvoice = kind === "invoice";
+  const shownRules = rules.filter((r) => r.applies_to === "all" || r.applies_to === kind);
+  const documentKind: DocumentKind = isInvoice ? "vendor_invoice" : paidWith;
+  // An invoice they paid needs the invoice and, separately, the proof that they paid it.
+  const needsProof = documentKind === "paid_invoice";
   const effectivePayout = isInvoice && payoutType === "saved" ? "paynow_uen" : payoutType;
 
-  function addFiles(list: FileList | null) {
+  function addFiles(list: FileList | null, proof: boolean) {
     if (!list) return;
     const next = [...files];
     for (const f of Array.from(list)) {
       if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
       if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
-      if (next.length < MAX_FILES) next.push({ file: f });
+      if (next.length < MAX_FILES) next.push({ file: f, proof });
     }
     setFiles(next);
+  }
+
+  // Changing what is attached starts the files afresh, as TRP's form does: a file attached as one
+  // kind of document is never sent as another (an invoice as the receipt, say).
+  function choose(nextKind: typeof kind, nextPaidWith: typeof paidWith) {
+    const next: DocumentKind = nextKind === "invoice" ? "vendor_invoice" : nextPaidWith;
+    setKind(nextKind);
+    setPaidWith(nextPaidWith);
+    if (next !== documentKind) setFiles([]);
   }
 
   // Files can't change while a submission is uploading them (the controls are disabled), so what
@@ -74,7 +96,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    if (!files.length) return setError(isInvoice ? "Attach the invoice." : "Attach your receipt.");
+    if (!files.some((a) => !a.proof)) return setError(isInvoice || needsProof ? "Attach the invoice." : "Attach your receipt.");
+    if (needsProof && !files.some((a) => a.proof)) return setError("Attach the proof of payment: a screenshot of the PayNow or bank transfer.");
     const fd = new FormData(e.currentTarget);
     const s = (k: string) => String(fd.get(k) ?? "");
     setBusy(true);
@@ -122,6 +145,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
         attachmentPaths,
         payout,
         savePayout: fd.get("savePayout") === "on",
+        agreed: fd.get("agreed") === "on",
         submissionId,
       });
       if (!res.ok) { setError(res.error); setBusy(false); return; }
@@ -144,7 +168,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">
             {(["reimbursement", "invoice"] as const).map((k) => (
-              <button key={k} type="button" disabled={busy} onClick={() => setKind(k)}
+              <button key={k} type="button" disabled={busy} onClick={() => choose(k, paidWith)}
                 className={cn("rounded-xl px-4 py-2.5 text-left text-sm transition-colors", kind === k ? "bg-ink text-white" : "hover:bg-canvas")}>
                 <div className="font-medium">{k === "reimbursement" ? "Reimburse me" : "Pay a vendor invoice"}</div>
                 <div className={cn("text-xs", kind === k ? "text-white/70" : "text-ink-soft")}>
@@ -189,7 +213,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
                 <Field label="Payment due"><Input name="dueDate" type="date" /></Field>
               </>
             ) : (
-              <Field label="Date of purchase"><Input name="expenseDate" type="date" max={today} /></Field>
+              <Field label="Date of purchase"><Input name="expenseDate" type="date" max={today} required /></Field>
             )}
             <Field label="Description" className="sm:col-span-2">
               <Textarea name="description" required maxLength={500} placeholder={isInvoice ? "e.g. Venue rental for 12 Oct workshop, 9am–5pm" : "e.g. Snacks and water for 40 volunteers"} />
@@ -199,23 +223,30 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
 
         <Card>
           <CardHeader>
-            <CardTitle>{isInvoice ? "Invoice" : "Receipt"}</CardTitle>
+            <CardTitle>{isInvoice ? "Invoice" : paidWith === "paid_invoice" ? "Invoice and proof of payment" : "Receipt"}</CardTitle>
             <CardDescription>Images or PDFs, up to 10 MB each, max {MAX_FILES} files.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
-            <label aria-disabled={busy} className="flex cursor-pointer flex-col aria-disabled:pointer-events-none aria-disabled:opacity-50 items-center justify-center gap-1 rounded-xl border border-dashed border-ink/25 bg-canvas/60 px-4 py-8 text-center text-sm hover:bg-canvas">
-              <Paperclip className="size-5 text-brand-deep" />
-              <span className="font-medium">Tap to add files</span>
-              <span className="text-xs text-ink-soft">or take a photo</span>
-              <input type="file" accept={ACCEPTED.join(",")} multiple disabled={busy} className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-            </label>
-            {files.map(({ file: f }, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">
-                <FileText className="size-4 text-ink-soft" />
-                <span className="flex-1 truncate">{f.name}</span>
-                <button type="button" aria-label={`Remove ${f.name}`} disabled={busy} onClick={() => removeFile(i)}><X className="size-4" /></button>
+            {!isInvoice && (
+              <div role="radiogroup" aria-label="What are you attaching?" className="grid grid-cols-2 gap-2 rounded-xl border border-line p-1">
+                {(["receipt", "paid_invoice"] as const).map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={paidWith === k} disabled={busy} onClick={() => choose(kind, k)}
+                    className={cn("rounded-lg px-3 py-2 text-sm", paidWith === k ? "bg-ink text-white" : "hover:bg-canvas")}>
+                    {k === "receipt" ? "Receipt" : "Invoice I've paid"}
+                  </button>
+                ))}
               </div>
-            ))}
+            )}
+            <MandatoryFields kind={documentKind} />
+            {needsProof ? (
+              <>
+                <FileSlot title="Invoice(s)" hint="One or more invoices you paid." files={files} proof={false} busy={busy} onAdd={addFiles} onRemove={removeFile} />
+                <FileSlot title="Proof(s) of payment" hint="One or more screenshots of the PayNow or bank transfer confirmation."
+                  files={files} proof busy={busy} onAdd={addFiles} onRemove={removeFile} />
+              </>
+            ) : (
+              <FileSlot files={files} proof={false} busy={busy} onAdd={addFiles} onRemove={removeFile} />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -282,18 +313,84 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
           </CardContent>
         </Card>
 
-        <Card className="p-5">
-          <p className="text-sm text-ink-soft">
-            {goesStraightToFinance
-              ? "This goes straight to Finance for approval."
-              : "Your event lead will review this first, then Finance gives final approval. We'll e-mail you when it's approved."}
-          </p>
-          {error && <Alert className="mt-4">{error}</Alert>}
-          <Button type="submit" size="lg" className="mt-4 w-full" disabled={busy}>
-            {busy ? "Submitting…" : isInvoice ? "Submit invoice" : "Submit claim"}
-          </Button>
+        <Card>
+          <CardHeader><CardTitle>Declaration</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            {shownRules.map((r) => (
+              <section key={r.id} className="grid gap-1 rounded-xl border border-line bg-canvas/60 p-3.5">
+                <h3 className="font-medium">{r.title}</h3>
+                <p className="whitespace-pre-wrap text-ink-soft">{r.body}</p>
+                {r.link_url && (
+                  <a href={r.link_url} target="_blank" rel="noreferrer" className="justify-self-start text-brand-deep underline underline-offset-4">
+                    {r.link_label}
+                  </a>
+                )}
+              </section>
+            ))}
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3.5">
+              <input type="checkbox" name="agreed" required disabled={busy} className="mt-0.5 accent-brand-deep" />
+              <span>{AGREEMENT}</span>
+            </label>
+            <p className="text-ink-soft">
+              {goesStraightToFinance
+                ? "This goes straight to Finance for approval."
+                : "Your event lead will review this first, then Finance gives final approval. We'll e-mail you when it's approved."}
+            </p>
+            {error && <Alert>{error}</Alert>}
+            <Button type="submit" size="lg" className="w-full" disabled={busy}>
+              {busy ? "Submitting…" : isInvoice ? "Submit invoice" : "Submit claim"}
+            </Button>
+          </CardContent>
         </Card>
       </div>
     </form>
+  );
+}
+
+// The fields a document must show, as TRP's finance system lists them (src/lib/receipt-fields.ts).
+function MandatoryFields({ kind }: { kind: DocumentKind }) {
+  const { label, fields } = DOCUMENT_FIELDS[kind];
+  return (
+    <div className="grid gap-3 rounded-2xl border border-line bg-canvas p-4 text-sm">
+      <div className="flex items-start gap-2 font-semibold uppercase tracking-wide">
+        <ListChecks className="mt-0.5 size-4 shrink-0" />
+        <span>{label} — must show these mandatory fields:</span>
+      </div>
+      <ul className="grid list-disc gap-1 pl-5 text-ink-soft">{fields.map((f) => <li key={f}>{f}</li>)}</ul>
+      <p className="text-ink-soft">Make sure your uploaded document clearly shows all fields above for faster approval.</p>
+    </div>
+  );
+}
+
+// Where one kind of document is added: the receipt or invoice, or (proof) the proof of payment.
+function FileSlot({ title, hint, files, proof, busy, onAdd, onRemove }: {
+  title?: string; hint?: string; files: Attachment[]; proof: boolean; busy: boolean;
+  onAdd: (list: FileList | null, proof: boolean) => void; onRemove: (i: number) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      {title && (
+        <div>
+          <div className="text-sm font-medium">{title}</div>
+          <div className="text-xs text-ink-soft">{hint}</div>
+        </div>
+      )}
+      <label aria-disabled={busy} className="flex cursor-pointer flex-col aria-disabled:pointer-events-none aria-disabled:opacity-50 items-center justify-center gap-1 rounded-xl border border-dashed border-ink/25 bg-canvas/60 px-4 py-8 text-center text-sm hover:bg-canvas">
+        <Paperclip className="size-5 text-brand-deep" />
+        <span className="font-medium">Tap to add files</span>
+        <span className="text-xs text-ink-soft">or take a photo</span>
+        {/* Named for its slot, so the invoice and proof inputs don't sound the same to a screen reader. */}
+        <input type="file" accept={ACCEPTED.join(",")} multiple disabled={busy} className="sr-only"
+          aria-label={title ? `Add ${title.toLowerCase()}` : undefined}
+          onChange={(e) => { onAdd(e.target.files, proof); e.target.value = ""; }} />
+      </label>
+      {files.map((a, i) => !a.proof === !proof && (
+        <div key={i} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">
+          <FileText className="size-4 text-ink-soft" />
+          <span className="flex-1 truncate">{a.file.name}</span>
+          <button type="button" aria-label={`Remove ${a.file.name}`} disabled={busy} onClick={() => onRemove(i)}><X className="size-4" /></button>
+        </div>
+      ))}
+    </div>
   );
 }

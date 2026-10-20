@@ -94,6 +94,26 @@ export interface Claim {
 export const CLAIM_COLUMNS =
   "id, kind, status, claimant_id, claimant_name, division_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type, payout_masked, rejection_reason, payment_reference, imported, created_at, updated_at";
 
+export type ClaimRuleScope = "all" | "reimbursement" | "invoice";
+
+/** claim_rules (0007): a notice the claim form shows. Plain text, never HTML. */
+export interface ClaimRule {
+  id: string;
+  title: string;
+  body: string;
+  applies_to: ClaimRuleScope;
+  link_label: string | null;
+  link_url: string | null;
+  sort_order: number;
+  active: boolean;
+}
+
+export const RULE_SCOPE_LABEL: Record<ClaimRuleScope, string> = {
+  all: "Every claim",
+  reimbursement: "Reimbursements",
+  invoice: "Vendor invoices",
+};
+
 export interface ReserveAddition {
   id: number;
   amount_cents: number;

@@ -44,6 +44,7 @@ const base: ClaimInput = {
   expenseDate: "2026-10-01",
   attachmentPaths: [`${ME}/abc/0-r.jpg`],
   payout: { type: "paynow_mobile", name: "Tan Ah Kow", proxy: "9123 4567" },
+  agreed: true,
   submissionId: "60000000-0000-4000-8000-000000000001",
 };
 
@@ -120,6 +121,16 @@ describe("submitClaim", () => {
 
   it("refuses a future purchase date", async () => {
     expect(await submitClaim({ ...base, expenseDate: "2999-01-01" })).toEqual({ ok: false, error: "The purchase date can't be in the future." });
+    expect(tables.claims.insert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a reimbursement without its purchase date", async () => {
+    expect(await submitClaim({ ...base, expenseDate: "" })).toEqual({ ok: false, error: "Enter the date of purchase." });
+    expect(tables.claims.insert).not.toHaveBeenCalled();
+  });
+
+  it("refuses a claim whose declaration wasn't agreed to", async () => {
+    expect(await submitClaim({ ...base, agreed: false })).toEqual({ ok: false, error: "Tick the box to agree to the declaration." });
     expect(tables.claims.insert).not.toHaveBeenCalled();
   });
 

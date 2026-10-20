@@ -83,3 +83,59 @@ export async function saveBudget(id: string | null, input: BudgetInput): Promise
   });
   return done(error, "budget");
 }
+
+// Claim rules (0007): notices the claim form shows. Plain text; a link must be https.
+const ruleInput = z.object({
+  title: z.string().trim().min(1, "Give the rule a title.").max(100, "Keep the title under 100 characters."),
+  body: z.string().trim().min(1, "Write the rule.").max(2000, "Keep the rule under 2,000 characters."),
+  appliesTo: z.enum(["all", "reimbursement", "invoice"]),
+  linkLabel: z.string().trim().max(60, "Keep the link text under 60 characters."),
+  linkUrl: z.string().trim().max(500, "That link is too long."),
+  sortOrder: z.number().int().min(0).max(1000),
+  active: z.boolean(),
+});
+
+export type ClaimRuleInput = z.input<typeof ruleInput>;
+
+function ruleDone(error: { code?: string; message?: string } | null): Result {
+  const res = done(error, "rule");
+  if (res.ok) revalidatePath("/claims/new");
+  return res;
+}
+
+// An update or delete that matched no row isn't an error: the rule is gone (another Finance member).
+function ruleChanged({ data, error }: { data: unknown[] | null; error: { code?: string; message?: string } | null }): Result {
+  if (!error && !data?.length) return { ok: false, error: "That rule wasn't found." };
+  return ruleDone(error);
+}
+
+export async function saveClaimRule(id: string | null, input: ClaimRuleInput): Promise<Result> {
+  await requireFinance();
+  if (id !== null && !z.uuid().safeParse(id).success) return { ok: false, error: "That rule wasn't found." };
+  const parsed = ruleInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const v = parsed.data;
+  if (!v.linkLabel !== !v.linkUrl) return { ok: false, error: "Give the link both its text and its address, or neither." };
+  if (v.linkUrl && !/^https:\/\/[^\s<>"]+$/.test(v.linkUrl)) return { ok: false, error: "The link must start with https://." };
+  const row = {
+    title: v.title, body: v.body, applies_to: v.appliesTo, sort_order: v.sortOrder, active: v.active,
+    link_label: v.linkLabel || null, link_url: v.linkUrl || null,
+  };
+  const supabase = await createClient();
+  if (id === null) return ruleDone((await supabase.from("claim_rules").insert(row)).error);
+  return ruleChanged(await supabase.from("claim_rules").update(row).eq("id", id).select("id"));
+}
+
+export async function setClaimRuleActive(id: string, active: boolean): Promise<Result> {
+  await requireFinance();
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "That rule wasn't found." };
+  const supabase = await createClient();
+  return ruleChanged(await supabase.from("claim_rules").update({ active }).eq("id", id).select("id"));
+}
+
+export async function deleteClaimRule(id: string): Promise<Result> {
+  await requireFinance();
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "That rule wasn't found." };
+  const supabase = await createClient();
+  return ruleChanged(await supabase.from("claim_rules").delete().eq("id", id).select("id"));
+}
