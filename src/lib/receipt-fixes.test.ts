@@ -52,6 +52,17 @@ describe("rejectionReason", () => {
     expect(reason.endsWith(".")).toBe(true);
   });
 
+  it("leaves out a fix too long to fit, and still adds the shorter ones after it", () => {
+    const reason = rejectionReason({
+      verdict: "check_needed",
+      findings: {
+        missing: ["a".repeat(250), "b".repeat(300)],
+        skipped: [{ name: "photo.heic", reason: "HEIC photos can't be read; a JPEG, PNG or PDF can" }],
+      },
+    })!;
+    expect(reason).toBe(`${"a".repeat(250)}. Couldn't read photo.heic: HEIC photos can't be read; a JPEG, PNG or PDF can.`);
+  });
+
   it("cuts a single long fix down, and gives none when there's nothing to fix", () => {
     expect(rejectionReason({ verdict: "check_needed", findings: { missing: ["y".repeat(900)] } })).toHaveLength(500);
     expect(rejectionReason({ verdict: "looks_right", findings: {} })).toBeNull();

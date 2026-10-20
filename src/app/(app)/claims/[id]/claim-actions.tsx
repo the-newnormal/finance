@@ -19,6 +19,18 @@ export function ReviewActions({ claimId, canApprove, canReject, approveLabel, su
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  // The findings the reason was filled with, while it is still exactly them. When a re-check brings
+  // new findings (or none), an untouched copy follows them; anything the reviewer wrote stays.
+  const [filled, setFilled] = useState<string | null>(null);
+  const [lastSuggested, setLastSuggested] = useState(suggestedReason);
+  if (lastSuggested !== suggestedReason) {
+    setLastSuggested(suggestedReason);
+    if (filled !== null && reason === filled) {
+      setReason(suggestedReason ?? "");
+      setFilled(suggestedReason ?? null);
+    }
+  }
+  const fill = (text: string) => { setReason(text); setFilled(text); };
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
     start(async () => {
@@ -38,7 +50,7 @@ export function ReviewActions({ claimId, canApprove, canReject, approveLabel, su
             <Textarea maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Receipt is unreadable; please re-upload." />
           </Field>
           {suggestedReason && reason !== suggestedReason && (
-            <Button size="sm" variant="outline" className="justify-self-start" onClick={() => setReason(suggestedReason)}>
+            <Button size="sm" variant="outline" className="justify-self-start" onClick={() => fill(suggestedReason)}>
               Use the AI check&apos;s findings
             </Button>
           )}

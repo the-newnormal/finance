@@ -48,6 +48,26 @@ describe("ReviewActions", () => {
     expect(decideClaim).toHaveBeenCalledWith("c1", false, "The receipt doesn't show: Payment Method.");
   });
 
+  it("keeps a filled reason in step with a re-check, but never the reviewer's own words", async () => {
+    await render("The receipt doesn't show: Payment Method.");
+    await click("Reject…");
+    await click("Use the AI check's findings");
+    await render("The total on the documents doesn't match the amount claimed.");
+    expect(el.querySelector("textarea")!.value).toBe("The total on the documents doesn't match the amount claimed.");
+    await render(null);
+    expect(el.querySelector("textarea")!.value).toBe("");
+
+    await render("The receipt doesn't show: Payment Method.");
+    await click("Use the AI check's findings");
+    const textarea = el.querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "Please re-upload the receipt.");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await render(null);
+    expect(el.querySelector("textarea")!.value).toBe("Please re-upload the receipt.");
+  });
+
   it("offers nothing to fill in without findings", async () => {
     await render(null);
     await click("Reject…");

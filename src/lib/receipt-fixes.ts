@@ -33,17 +33,16 @@ export function receiptFixes(check: Pick<ReceiptCheck, "verdict" | "findings">):
 
 /**
  * A rejection reason made of the fixes, for the reviewer to check and edit before sending: as many
- * whole sentences as fit decide_claim's 500 characters. Null when there's nothing to fix.
+ * whole sentences as fit decide_claim's 500 characters, in order (one too long is left out and the
+ * rest still tried). Null when there's nothing to fix.
  */
 export function rejectionReason(check: Pick<ReceiptCheck, "verdict" | "findings">, max = 500): string | null {
+  const fixes = receiptFixes(check);
   let reason = "";
-  for (const fix of receiptFixes(check)) {
+  for (const fix of fixes) {
     const next = reason ? `${reason} ${fix}` : fix;
-    if (next.length > max) {
-      if (!reason) reason = `${fix.slice(0, max - 1)}…`;
-      break;
-    }
-    reason = next;
+    if (next.length <= max) reason = next;
   }
+  if (!reason && fixes.length) reason = `${fixes[0].slice(0, max - 1)}…`;
   return reason || null;
 }
