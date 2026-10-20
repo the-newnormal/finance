@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
-import { withNames } from "./claims";
+import { paidFor, withNames } from "./claims";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
@@ -45,5 +45,12 @@ describe("withNames", () => {
   it("shows a dash for any other budget the viewer can't read", async () => {
     const [claim] = await withNames([row(HIDDEN, "10000000-0000-4000-8000-000000000002")]);
     expect(claim.budgetName).toBe("—");
+  });
+});
+
+describe("paidFor", () => {
+  it("names a claim by its description, and an invoice by its vendor too", () => {
+    expect(paidFor({ kind: "reimbursement", description: "Snacks for volunteers", vendor_name: null })).toBe("Snacks for volunteers");
+    expect(paidFor({ kind: "invoice", description: "Venue rental", vendor_name: "The Hall Pte Ltd" })).toBe("Venue rental · The Hall Pte Ltd");
   });
 });

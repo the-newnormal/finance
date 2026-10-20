@@ -29,6 +29,8 @@ export type Entry = {
   amount_cents: number;
   entry_date: string;
   note: string | null;
+  /** For a payout: what the claim was for (its description, and an invoice's vendor). */
+  paid_for: string | null;
   actor_name: string;
   created_at: string;
 };
@@ -123,7 +125,14 @@ export function BankManager({ accounts, entries, ledger, today }: {
                     <TD className="whitespace-nowrap text-ink-soft">{formatDate(e.entry_date)}</TD>
                     <TD className="whitespace-nowrap">{name(e.account_id)}</TD>
                     <TD className="whitespace-nowrap">{KIND_LABEL[e.kind]}</TD>
-                    <TD className="min-w-40 text-ink-soft">{e.note}</TD>
+                    <TD className="min-w-40 text-ink-soft">
+                      {e.paid_for ? (
+                        <>
+                          <div className="text-ink">{e.paid_for}</div>
+                          {e.note && <div className="text-xs">{e.note}</div>}
+                        </>
+                      ) : e.note}
+                    </TD>
                     <TD className={cn("whitespace-nowrap text-right tabular-nums", e.amount_cents < 0 ? "text-danger" : "text-brand-deep")}>
                       {e.amount_cents > 0 ? "+" : "−"}{formatSGD(Math.abs(e.amount_cents))}
                     </TD>

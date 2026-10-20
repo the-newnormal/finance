@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/page-header";
+import { paidFor } from "@/lib/claims";
 import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { BankManager, type Account, type Entry } from "./bank-manager";
@@ -26,13 +27,24 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
   // The ledger, a page at a time (one extra row says whether there's an older page).
   let query = supabase
     .from("bank_entries")
-    .select("id, account_id, kind, amount_cents, entry_date, note, actor_name, created_at")
+    .select("id, account_id, kind, amount_cents, entry_date, note, claim_id, actor_name, created_at")
     .order("entry_date", { ascending: false })
     .order("id", { ascending: false });
   if (account) query = query.eq("account_id", account);
   const { data: rows, error: ledgerError } = await query.range(page * PAGE, page * PAGE + PAGE);
   if (ledgerError) throw new Error(`ledger read failed: ${ledgerError.code}`);
-  const entries = (rows ?? []) as Entry[];
+  const entries = (rows ?? []) as (Omit<Entry, "paid_for"> & { claim_id: string | null })[];
+  const shown = entries.slice(0, PAGE);
+  // A payout's note (written when it was paid) says who was paid and the bank reference; the ledger
+  // leads with what the claim was for, read from the claim itself. If that can't be read, the note
+  // alone is shown.
+  const claimIds = shown.flatMap((e) => (e.claim_id ? [e.claim_id] : []));
+  const paid = new Map<string, string>();
+  if (claimIds.length) {
+    const { data: claims, error: claimsError } = await supabase.from("claims").select("id, kind, description, vendor_name").in("id", claimIds);
+    if (claimsError) console.error("ledger claims read failed", { code: claimsError.code });
+    for (const c of claims ?? []) paid.set(c.id as string, paidFor(c as Parameters<typeof paidFor>[0]));
+  }
 
   return (
     <>
@@ -42,7 +54,9 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
       />
       <BankManager
         accounts={(accounts ?? []).map((a) => ({ ...a, balance_cents: Number(a.balance_cents) }) as Account)}
-        entries={entries.slice(0, PAGE).map((e) => ({ ...e, amount_cents: Number(e.amount_cents) }))}
+        entries={shown.map(({ claim_id, ...e }) => ({
+          ...e, amount_cents: Number(e.amount_cents), paid_for: (claim_id && paid.get(claim_id)) || null,
+        }))}
         ledger={{ account, page, hasOlder: entries.length > PAGE }}
         today={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore" }).format(new Date())}
       />

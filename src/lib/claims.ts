@@ -19,6 +19,11 @@ export function hiddenBudgetName(divisionId: string | null) {
   return divisionId === null ? "Reserve" : "—";
 }
 
+/** What a claim paid for, as the Bank page's ledger names it: its description, and the vendor for an invoice. */
+export function paidFor(c: Pick<Claim, "kind" | "description" | "vendor_name">): string {
+  return c.kind === "invoice" && c.vendor_name ? `${c.description} · ${c.vendor_name}` : c.description;
+}
+
 /** Adds budget and category names to claim rows, for ClaimsTable. Every name is read; a failure throws. */
 export async function withNames(rows: Raw[]): Promise<ClaimRow[]> {
   if (!rows.length) return [];
