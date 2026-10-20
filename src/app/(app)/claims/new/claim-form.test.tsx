@@ -60,7 +60,7 @@ describe("ClaimForm", () => {
   it("asks for a receipt, or for an invoice and its proof of payment separately", async () => {
     expect(fileInputs()).toHaveLength(1);
     await act(async () => radio("Invoice I've paid").click());
-    expect(fileInputs()).toHaveLength(2);
+    expect(fileInputs().map((i) => i.getAttribute("aria-label"))).toEqual(["Add invoice(s)", "Add proof(s) of payment"]);
     expect(el.textContent).toContain("Proof(s) of payment");
     expect(el.textContent).toContain("Proof Of Payment — Payee");
   });

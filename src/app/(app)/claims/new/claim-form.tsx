@@ -377,7 +377,10 @@ function FileSlot({ title, hint, files, proof, busy, onAdd, onRemove }: {
         <Paperclip className="size-5 text-brand-deep" />
         <span className="font-medium">Tap to add files</span>
         <span className="text-xs text-ink-soft">or take a photo</span>
-        <input type="file" accept={ACCEPTED.join(",")} multiple disabled={busy} className="sr-only" onChange={(e) => { onAdd(e.target.files, proof); e.target.value = ""; }} />
+        {/* Named for its slot, so the invoice and proof inputs don't sound the same to a screen reader. */}
+        <input type="file" accept={ACCEPTED.join(",")} multiple disabled={busy} className="sr-only"
+          aria-label={title ? `Add ${title.toLowerCase()}` : undefined}
+          onChange={(e) => { onAdd(e.target.files, proof); e.target.value = ""; }} />
       </label>
       {files.map((a, i) => !a.proof === !proof && (
         <div key={i} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">
