@@ -44,7 +44,7 @@ describe("decideClaim", () => {
     returns({ data: { ...outcome, status: "pending_finance" } });
     await decideClaim(ID, true);
     expect(sendEmail).not.toHaveBeenCalled();
-    expect(emailReviewers).toHaveBeenCalledExactlyOnceWith(ID, "me");
+    expect(emailReviewers).toHaveBeenCalledExactlyOnceWith(ID, "pending_finance", "me");
   });
 
   it("tells no reviewer once Finance has decided", async () => {

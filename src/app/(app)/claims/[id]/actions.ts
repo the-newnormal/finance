@@ -72,7 +72,7 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
     ], { href: `/claims/${id}`, label: "View claim" }));
   } else if (data.status === "pending_finance") {
     // Reviewed: tell Finance it's waiting for final approval, except whoever just reviewed it.
-    after(() => emailReviewers(id, me.id));
+    after(() => emailReviewers(id, "pending_finance", me.id));
   }
 
   revalidatePath(`/claims/${id}`);

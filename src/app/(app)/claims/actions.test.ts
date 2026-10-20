@@ -26,7 +26,7 @@ let tables: Record<string, ReturnType<typeof table>>;
 beforeEach(() => {
   vi.stubEnv("PAYOUT_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
   vi.mocked(emailReviewers).mockClear();
-  tables = { claims: table({ data: { id: "claim-1" }, error: null }), member_payouts: table({ data: null, error: null }) };
+  tables = { claims: table({ data: { id: "claim-1", status: "pending_review" }, error: null }), member_payouts: table({ data: null, error: null }) };
   vi.mocked(createClient).mockResolvedValue({ from: (t: string) => tables[t] } as never);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -88,7 +88,7 @@ describe("submitClaim", () => {
 
   it("tells the claim's reviewers it's waiting, once: not again on a retry", async () => {
     await submitClaim(base);
-    expect(emailReviewers).toHaveBeenCalledExactlyOnceWith("claim-1");
+    expect(emailReviewers).toHaveBeenCalledExactlyOnceWith("claim-1", "pending_review");
     tables.claims = table({ data: { id: "claim-1" }, error: { code: "23505", message: "duplicate" } });
     await submitClaim(base);
     expect(emailReviewers).toHaveBeenCalledTimes(1);

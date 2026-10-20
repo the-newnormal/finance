@@ -48,10 +48,12 @@ async function activeMembers(service: Service, role: "lead" | "finance", ids?: s
 // Emails whoever must act on a claim next that it is waiting for them. A volunteer's claim awaiting
 // review goes to the leads of its division, or to Finance when no active lead is left to review it.
 // A claim awaiting final approval goes to Finance. Never to the claimant, nor to `except` (whoever
-// just acted). The claim and the decision are already saved and checked by the database; this only
-// reads, with the service role, who reviews it and their addresses, which go nowhere but the email.
-// Failures are logged as codes.
-export async function emailReviewers(claimId: string, except?: string) {
+// just acted). `stage` is the status the caller just put the claim in: if it has moved on since
+// (say, a lead reviewed it at once), whoever moved it sends that stage's email, so this sends none.
+// The claim and the decision are already saved and checked by the database; this only reads, with
+// the service role, who reviews it and their addresses, which go nowhere but the email. Failures
+// are logged as codes.
+export async function emailReviewers(claimId: string, stage: "pending_review" | "pending_finance", except?: string) {
   let service;
   try {
     service = createServiceRoleClient();
@@ -68,7 +70,7 @@ export async function emailReviewers(claimId: string, except?: string) {
     console.error("notify reviewers lookup failed", { code: error?.code ?? "not_found" });
     return;
   }
-  if (claim.status !== "pending_review" && claim.status !== "pending_finance") return;
+  if (claim.status !== stage) return;
 
   const notThem = (r: Reviewer) => r.id !== claim.claimant_id && r.id !== except;
   let reviewers: Reviewer[] | null = [];
@@ -85,7 +87,9 @@ export async function emailReviewers(claimId: string, except?: string) {
   if (reviewers && !reviewers.length) reviewers = (await activeMembers(service, "finance"))?.filter(notThem) ?? null;
   if (!reviewers?.length) return;
 
-  const { data: budget } = await service.from("budgets").select("name").eq("id", claim.budget_id).maybeSingle();
+  // The budget's name only makes the email clearer: if it can't be read, say "a budget", don't drop it.
+  const { data: budget, error: budgetError } = await service.from("budgets").select("name").eq("id", claim.budget_id).maybeSingle();
+  if (budgetError) console.error("notify reviewers lookup failed", { code: budgetError.code });
   const amount = formatSGD(Number(claim.amount_cents));
   const budgetName = (budget?.name as string | undefined) ?? "a budget";
   const invoice = claim.kind === "invoice";
