@@ -199,7 +199,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
 
   return (
     <form onSubmit={onSubmit} onChange={(e) => { if (CHECKED_FIELDS.has((e.target as Element).getAttribute("name") ?? "")) setChanged(true); }} className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <div className="grid content-start gap-6">
+      {/* Locked while submitting (and while the AI check reads the files): what is sent is what is on screen. */}
+      <fieldset disabled={busy} className="grid min-w-0 content-start gap-6">
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">
             {(["reimbursement", "invoice"] as const).map((k) => (
@@ -287,7 +288,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             )}
           </CardContent>
         </Card>
-      </div>
+      </fieldset>
 
       <div className="grid content-start gap-6">
         <Card>

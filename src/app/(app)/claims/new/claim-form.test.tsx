@@ -156,6 +156,20 @@ describe("ClaimForm", () => {
     expect(submitClaim).toHaveBeenCalledTimes(1);
   });
 
+  it("with the AI check on, locks what was entered while the files are read", async () => {
+    await render(true);
+    await fill();
+    let finish!: (r: { ok: true; fixes: string[] }) => void;
+    vi.mocked(precheckClaim).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const locked = () => el.querySelector('[name="amount"]')!.closest("fieldset")!.disabled;
+    expect(locked()).toBe(false);
+    await submit();
+    expect(submitButton().textContent).toBe("Checking your receipts…");
+    expect(locked()).toBe(true);
+    await act(async () => finish({ ok: true, fixes: ["The receipt doesn't show: Payment Method."] }));
+    expect(locked()).toBe(false);
+  });
+
   it("with the AI check on, checks again once something it reads has changed", async () => {
     await render(true);
     await fill();
