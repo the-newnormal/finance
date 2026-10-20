@@ -43,6 +43,7 @@ Divisions are empty shells: they hold no money. Finance creates **budgets** insi
 - **Bank accounts** (0004): `bank_accounts` and an append-only `bank_entries` ledger, visible only to Finance. The expected balance is the `bank_balances` view, never stored. Entries are written only by `add_bank_account`, `record_bank_entry`, `transfer_between_accounts` and `mark_paid`; mistakes are corrected with an adjustment. Only the last four digits of an account number are stored.
 - **Imported claims** (0005): Finance imports claims paid before this app with `import_paid_claims` (all rows in one transaction; each becomes a paid claim with `imported = true`, no payout details, and a payout entry on the named account, never dated before its opening balance). Receipts can be added to imported claims later with `attach_claim_files`. Nobody sets `imported` through the API.
 - **Claim rules** (0007): notices Finance writes on the Setup page and the claim form shows in its declaration, above the box the claimant must tick to submit, each for every claim, reimbursements or vendor invoices. Plain text (never rendered as HTML), links https only. Every active member reads the shown ones; Finance also reads hidden ones and is the only writer. The mandatory fields each document must show (receipt, invoice the claimant paid, vendor invoice) are TRP's lists, fixed in `src/lib/receipt-fields.ts`.
+- **AI receipt checks** (0008): when a reviewer opens a claim awaiting a decision, the server reads its receipts with Claude, as that reviewer, and saves advice in `receipt_checks` through `record_receipt_check`. Only a lead of the claim's division or Finance records one, never the claimant (Finance excepted, as it may finalise its own), and only while the claim is pending. Only the claim's reviewers read it. Advice never changes a claim's status.
 - A budget and its guidelines are saved together through `save_budget`, and a member and their divisions through `add_member` / `update_member` (SECURITY INVOKER: RLS and triggers still decide).
 
 ## Security
@@ -50,6 +51,7 @@ Divisions are empty shells: they hold no money. Finance creates **budgets** insi
 - Never expose the service-role key to the client. `src/lib/supabase/admin.ts` is the only service-role client, used only by the People page's actions (`src/app/(app)/people/actions.ts`) to invite, deactivate and reactivate logins, and by `src/lib/notify.ts` to look up the emails of a claim's claimant and of whoever must review it next, for a notification (`admin-imports.test.ts` lists who may import it).
 - Never disable auth checks or weaken RLS without explicit review.
 - Logs carry codes and counts only: never names, emails, amounts or payout details.
+- Receipts go to Anthropic's API only for the AI receipt check (`src/lib/receipt-check.ts`), only when `ANTHROPIC_API_KEY` is set, and the claim form says so then. Payout details never go there.
 
 ## Testing
 - Add tests for new business logic. RLS and workflow rules are tested in `supabase/tests/` (`pnpm supabase test db`); pure logic (PayNow payloads, encryption, money parsing) with Vitest.

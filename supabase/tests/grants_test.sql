@@ -16,7 +16,7 @@ where c.relkind in ('r', 'v', 'm', 'p')
 select has_table('public', t, format('%s exists', t))
 from unnest(array['divisions', 'members', 'division_leads', 'member_payouts', 'categories', 'budgets',
                   'budget_categories', 'budget_guidelines', 'claims', 'claim_events', 'bank_accounts',
-                  'bank_entries', 'reserve_additions', 'claim_rules']) t;
+                  'bank_entries', 'reserve_additions', 'claim_rules', 'receipt_checks']) t;
 select has_view('public', v, format('%s exists', v))
 from unnest(array['guideline_totals', 'budget_totals', 'bank_balances']) v;
 
@@ -47,6 +47,8 @@ select ok(has_table_privilege('authenticated', 'public.member_payouts', 'delete'
 select ok(not has_table_privilege('authenticated', 'public.budget_categories', 'update'), 'budget_categories: not updated');
 select ok(has_table_privilege('authenticated', 'public.claim_rules', p), format('claim_rules: %s (Finance only, by RLS)', p))
 from unnest(array['select', 'insert', 'update', 'delete']) p;
+select ok(not has_table_privilege('authenticated', 'public.receipt_checks', p), format('receipt_checks: no %s (record_receipt_check writes it)', p))
+from unnest(array['insert', 'update', 'delete']) p;
 select ok(has_table_privilege('authenticated', v, 'select') and not has_table_privilege('authenticated', v, 'insert'),
   format('%s: read-only', v))
 from unnest(array['public.guideline_totals', 'public.budget_totals', 'public.bank_balances']) v;
@@ -84,7 +86,8 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.mark_paid(uuid, text, uuid)',
                   'public.import_paid_claims(jsonb)',
                   'public.attach_claim_files(uuid, text[])',
-                  'public.add_to_reserve(bigint, date, text)']) f;
+                  'public.add_to_reserve(bigint, date, text)',
+                  'public.record_receipt_check(uuid, public.receipt_verdict, text, jsonb, integer, text)']) f;
 
 -- The private helpers are unreachable for anon, and the trigger functions for everyone.
 select ok(not has_function_privilege('anon', p.oid, 'execute'), format('anon: no execute on %s', p.oid::regprocedure))

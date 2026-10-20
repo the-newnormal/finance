@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { singaporeToday } from "@/lib/dates";
 import { fetchAll } from "@/lib/fetch-all";
+import { receiptCheckEnabled } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { canInvoice, type Budget, type Category, type ClaimRule, type PayoutType } from "@/lib/types";
@@ -53,6 +54,7 @@ export default async function NewClaimPage() {
         categories={categoryRows}
         savedPayout={saved.data ? { type: saved.data.payout_type as PayoutType, masked: saved.data.payout_masked as string } : null}
         rules={rules}
+        aiCheck={receiptCheckEnabled()}
       />
     </>
   );

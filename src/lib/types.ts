@@ -114,6 +114,32 @@ export const RULE_SCOPE_LABEL: Record<ClaimRuleScope, string> = {
   invoice: "Vendor invoices",
 };
 
+export type ReceiptVerdict = "looks_right" | "check_needed" | "unreadable";
+
+/** receipt_checks.findings (0008): what Claude read and compared. Shape: CheckResult in receipt-check.ts. */
+export interface ReceiptFindings {
+  documents?: { file: string; kind: string; merchant: string | null; date: string | null; total: string | null;
+    reference: string | null; payment_method: string | null; items: string | null }[];
+  document_kind?: "receipt" | "paid_invoice" | "vendor_invoice" | "unclear";
+  fields?: { field: string; shown: "yes" | "no" | "unclear"; value: string | null }[];
+  amount_matches?: "yes" | "no" | "unclear";
+  date_matches?: "yes" | "no" | "unclear" | "not_given";
+  missing?: string[];
+  concerns?: string[];
+  skipped?: { name: string; reason: string }[];
+}
+
+/** receipt_checks (0008): the AI receipt check of a claim, advice for its reviewers. */
+export interface ReceiptCheck {
+  verdict: ReceiptVerdict;
+  summary: string;
+  findings: ReceiptFindings;
+  files_checked: number;
+  model: string;
+  checked_by_name: string;
+  checked_at: string;
+}
+
 export interface ReserveAddition {
   id: number;
   amount_cents: number;

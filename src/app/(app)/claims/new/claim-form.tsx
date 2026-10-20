@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, ListChecks, Paperclip, X } from "lucide-react";
+import { Bot, FileText, ListChecks, Paperclip, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { forgetSavedPayout, submitClaim, type ClaimInput } from "../actions";
@@ -26,6 +26,8 @@ type Props = {
   savedPayout: { type: PayoutType; masked: string } | null;
   /** The rules Finance shows on this form (claim_rules), in order. */
   rules: Pick<ClaimRule, "id" | "title" | "body" | "applies_to" | "link_label" | "link_url">[];
+  /** Whether reviewers' AI receipt check is on, so claimants are told their files may be read by it. */
+  aiCheck: boolean;
 };
 
 const MAX_FILES = 5;
@@ -40,7 +42,7 @@ type Attachment = { file: File; path?: string; proof?: boolean };
 // What the claimant ticks to submit, in TRP's words: it agrees to the declaration above it.
 const AGREEMENT = "I agree that all relevant information is accurate and free of errors, and I understand the processing timeline and terms above.";
 
-export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budgets, provisions, categories, savedPayout, rules }: Props) {
+export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budgets, provisions, categories, savedPayout, rules, aiCheck }: Props) {
   const router = useRouter();
   const [budgetId, setBudgetId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -224,7 +226,10 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
         <Card>
           <CardHeader>
             <CardTitle>{isInvoice ? "Invoice" : paidWith === "paid_invoice" ? "Invoice and proof of payment" : "Receipt"}</CardTitle>
-            <CardDescription>Images or PDFs, up to 10 MB each, max {MAX_FILES} files.</CardDescription>
+            <CardDescription>
+              Images or PDFs, up to 10 MB each, max {MAX_FILES} files.
+              {aiCheck && " Reviewers may have an AI service (Anthropic's Claude) read them to help check your claim: JPG, PNG or PDF work best, as it can't read HEIC photos."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
             {!isInvoice && (
@@ -237,7 +242,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
                 ))}
               </div>
             )}
-            <MandatoryFields kind={documentKind} />
+            <MandatoryFields kind={documentKind} ai={aiCheck} />
             {needsProof ? (
               <>
                 <FileSlot title="Invoice(s)" hint="One or more invoices you paid." files={files} proof={false} busy={busy} onAdd={addFiles} onRemove={removeFile} />
@@ -348,13 +353,15 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
 }
 
 // The fields a document must show, as TRP's finance system lists them (src/lib/receipt-fields.ts).
-function MandatoryFields({ kind }: { kind: DocumentKind }) {
+// With the AI receipt check on, it verifies each one for the reviewer.
+function MandatoryFields({ kind, ai }: { kind: DocumentKind; ai: boolean }) {
   const { label, fields } = DOCUMENT_FIELDS[kind];
+  const Icon = ai ? Bot : ListChecks;
   return (
     <div className="grid gap-3 rounded-2xl border border-line bg-canvas p-4 text-sm">
       <div className="flex items-start gap-2 font-semibold uppercase tracking-wide">
-        <ListChecks className="mt-0.5 size-4 shrink-0" />
-        <span>{label} — must show these mandatory fields:</span>
+        <Icon className="mt-0.5 size-4 shrink-0" />
+        <span>{label} — {ai ? "AI will verify these mandatory fields" : "must show these mandatory fields"}:</span>
       </div>
       <ul className="grid list-disc gap-1 pl-5 text-ink-soft">{fields.map((f) => <li key={f}>{f}</li>)}</ul>
       <p className="text-ink-soft">Make sure your uploaded document clearly shows all fields above for faster approval.</p>
