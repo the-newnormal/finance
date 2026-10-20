@@ -9,12 +9,28 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 
-export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: { claimId: string; canApprove: boolean; canReject: boolean; approveLabel: string }) {
+// `suggestedReason`: what the reviewer's own AI receipt check found for the claimant to fix, offered
+// to fill the reason with. They read and edit it before rejecting.
+export function ReviewActions({ claimId, canApprove, canReject, approveLabel, suggestedReason }: {
+  claimId: string; canApprove: boolean; canReject: boolean; approveLabel: string; suggestedReason?: string | null;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  // The findings the reason was filled with, while it is still exactly them. When a re-check brings
+  // new findings (or none), an untouched copy follows them; anything the reviewer wrote stays.
+  const [filled, setFilled] = useState<string | null>(null);
+  const [lastSuggested, setLastSuggested] = useState(suggestedReason);
+  if (lastSuggested !== suggestedReason) {
+    setLastSuggested(suggestedReason);
+    if (filled !== null && reason === filled) {
+      setReason(suggestedReason ?? "");
+      setFilled(suggestedReason ?? null);
+    }
+  }
+  const fill = (text: string) => { setReason(text); setFilled(text); };
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
     start(async () => {
@@ -29,9 +45,15 @@ export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: 
       {error && <Alert>{error}</Alert>}
       {rejecting ? (
         <>
-          <Field label="Reason (sent to the claimant)">
+          <Field label="Reason (sent to the claimant)"
+            hint={suggestedReason ? "If you use the AI check's findings, read them first: the AI can be wrong." : undefined}>
             <Textarea maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Receipt is unreadable; please re-upload." />
           </Field>
+          {suggestedReason && reason !== suggestedReason && (
+            <Button size="sm" variant="outline" className="justify-self-start" onClick={() => fill(suggestedReason)}>
+              Use the AI check&apos;s findings
+            </Button>
+          )}
           <div className="flex gap-2">
             <Button variant="destructive" disabled={pending} onClick={() => run(() => decideClaim(claimId, false, reason))}>Reject claim</Button>
             <Button variant="ghost" onClick={() => setRejecting(false)}>Cancel</Button>
