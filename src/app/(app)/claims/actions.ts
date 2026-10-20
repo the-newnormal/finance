@@ -3,17 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
+import { checkClaimDetails } from "@/lib/claim-details";
 import { assertPayoutKey, decryptPayout, encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
-import { parseAmountToCents } from "@/lib/money";
 import { emailReviewers } from "@/lib/notify";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { receiptCheckEnabled } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
-import { singaporeToday } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
-
-// claims.amount_cents's limit in the database.
-const MAX_CLAIM_CENTS = 100_000_000;
 
 export type SubmitResult = { ok: true; id: string; payoutSaved: boolean } | { ok: false; error: string };
 
@@ -71,14 +67,9 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
   const v = parsed.data;
   if (!v.agreed) return { ok: false, error: "Tick the box to agree to the declaration." };
 
-  const amount_cents = parseAmountToCents(v.amount);
-  if (!amount_cents) return { ok: false, error: "Enter a valid amount, e.g. 42.50." };
-  if (amount_cents > MAX_CLAIM_CENTS) return { ok: false, error: "A single claim can be at most $1,000,000." };
-  if (v.kind === "invoice" && !v.vendorName) return { ok: false, error: "Enter the vendor's name." };
-  if (v.kind === "reimbursement" && !v.expenseDate) return { ok: false, error: "Enter the date of purchase." };
-  if (v.kind === "reimbursement" && v.expenseDate && v.expenseDate > singaporeToday()) {
-    return { ok: false, error: "The purchase date can't be in the future." };
-  }
+  const details = checkClaimDetails(v);
+  if (!details.ok) return details;
+  const { amount_cents } = details;
 
   const supabase = await createClient();
   let payout_type, payout_masked, payout_enc;

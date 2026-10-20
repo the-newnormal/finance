@@ -4,6 +4,7 @@ import { Bot, FileText, ListChecks, Paperclip, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { forgetSavedPayout, submitClaim, type ClaimInput } from "../actions";
+import { precheckClaim } from "../precheck-actions";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +27,7 @@ type Props = {
   savedPayout: { type: PayoutType; masked: string } | null;
   /** The rules Finance shows on this form (claim_rules), in order. */
   rules: Pick<ClaimRule, "id" | "title" | "body" | "applies_to" | "link_label" | "link_url">[];
-  /** Whether reviewers' AI receipt check is on, so claimants are told their files may be read by it. */
+  /** Whether the AI receipt check is on: it reads the files as they submit, and for reviewers. */
   aiCheck: boolean;
 };
 
@@ -38,6 +39,10 @@ const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/h
 // A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
 // `proof` marks a proof of payment for an invoice the claimant paid; all of them are attached.
 type Attachment = { file: File; path?: string; proof?: boolean };
+
+// The fields the AI check reads (with the kind, budget, category and files); editing another, such as
+// the payout details, doesn't call for a new check.
+const CHECKED_FIELDS = new Set(["budgetId", "categoryId", "description", "amount", "expenseDate", "vendorName"]);
 
 // What the claimant ticks to submit, in TRP's words: it agrees to the declaration above it.
 const AGREEMENT = "I agree that all relevant information is accurate and free of errors, and I understand the processing timeline and terms above.";
@@ -59,6 +64,13 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   const [payoutType, setPayoutType] = useState<PayoutType | "saved">(savedPayout ? "saved" : "paynow_mobile");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  // The last AI check: what it read (`key`) and what it found to fix (none if it couldn't run). The same
+  // claim isn't checked twice, so submitting it again unchanged sends it as it is; `changed` (a field
+  // the check reads was edited since) only lets the button say so.
+  const [check, setCheck] = useState<{ key: string; fixes: string[] } | null>(null);
+  const [changed, setChanged] = useState(false);
+  const fixes = check?.fixes.length ? check.fixes : null;
   // One per claim: lets the server recognise a retry of this same claim.
   const [submissionId] = useState(() => crypto.randomUUID());
 
@@ -78,6 +90,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
       if (next.length < MAX_FILES) next.push({ file: f, proof });
     }
     setFiles(next);
+    setChanged(true);
   }
 
   // Changing what is attached starts the files afresh, as TRP's form does: a file attached as one
@@ -87,12 +100,15 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
     setKind(nextKind);
     setPaidWith(nextPaidWith);
     if (next !== documentKind) setFiles([]);
+    setChanged(true);
   }
 
   // Files can't change while a submission is uploading them (the controls are disabled), so what
   // is attached is always what's on screen. Removed files stay private in the member's own folder.
   function removeFile(i: number) {
-    if (!busy) setFiles(files.filter((_, j) => j !== i));
+    if (busy) return;
+    setFiles(files.filter((_, j) => j !== i));
+    setChanged(true);
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -127,6 +143,23 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
       setError("A file couldn't be uploaded. Check your connection and try again.");
       setBusy(false);
       return;
+    }
+
+    // With the AI check on, the files are read first, against what was entered (never the payout
+    // details), and anything to fix is shown. Submitting the same again sends it as it is; a check
+    // that can't run doesn't hold the claim up.
+    const checked = {
+      kind, budgetId, categoryId, description: s("description"), amount: s("amount"), expenseDate: s("expenseDate"),
+      vendorName: isInvoice ? s("vendorName") : undefined, attachmentPaths,
+    };
+    const key = JSON.stringify(checked);
+    if (aiCheck && check?.key !== key) {
+      setChecking(true);
+      const res = await precheckClaim(checked).catch(() => ({ ok: false as const }));
+      setChecking(false);
+      setCheck({ key, fixes: res.ok ? res.fixes : [] });
+      setChanged(false);
+      if (res.ok && res.fixes.length) { setBusy(false); return; }
     }
 
     try {
@@ -165,8 +198,9 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   ];
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <div className="grid content-start gap-6">
+    <form onSubmit={onSubmit} onChange={(e) => { if (CHECKED_FIELDS.has((e.target as Element).getAttribute("name") ?? "")) setChanged(true); }} className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      {/* Locked while submitting (and while the AI check reads the files): what is sent is what is on screen. */}
+      <fieldset disabled={busy} className="grid min-w-0 content-start gap-6">
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">
             {(["reimbursement", "invoice"] as const).map((k) => (
@@ -228,7 +262,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             <CardTitle>{isInvoice ? "Invoice" : paidWith === "paid_invoice" ? "Invoice and proof of payment" : "Receipt"}</CardTitle>
             <CardDescription>
               Images or PDFs, up to 10 MB each, max {MAX_FILES} files.
-              {aiCheck && " Reviewers may have an AI service (Anthropic's Claude) read them to help check your claim: JPG, PNG or PDF work best, as it can't read HEIC photos."}
+              {aiCheck && " When you submit, an AI service (Anthropic's Claude) reads them to check they show what's needed, and reviewers may have it read them again: JPG, PNG or PDF work best, as it can't read HEIC photos."}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
@@ -254,7 +288,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             )}
           </CardContent>
         </Card>
-      </div>
+      </fieldset>
 
       <div className="grid content-start gap-6">
         <Card>
@@ -341,9 +375,19 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
                 ? "This goes straight to Finance for approval."
                 : "Your event lead will review this first, then Finance gives final approval. We'll e-mail you when it's approved."}
             </p>
+            {fixes && (
+              <div role="status" className="grid gap-2 rounded-xl border border-orange/60 bg-orange/10 p-3.5">
+                <div className="flex items-center gap-2 font-medium"><Bot className="size-4 shrink-0" /> The AI check found something to fix</div>
+                <ul className="grid list-disc gap-1 pl-5">{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
+                <p className="text-ink-soft">
+                  Fix it and submit again, or submit it as it is: the AI can be wrong, and your reviewer decides.
+                </p>
+              </div>
+            )}
             {error && <Alert>{error}</Alert>}
             <Button type="submit" size="lg" className="w-full" disabled={busy}>
-              {busy ? "Submitting…" : isInvoice ? "Submit invoice" : "Submit claim"}
+              {checking ? "Checking your receipts…" : busy ? "Submitting…"
+                : fixes && !changed ? "Submit as it is" : isInvoice ? "Submit invoice" : "Submit claim"}
             </Button>
           </CardContent>
         </Card>
