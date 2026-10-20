@@ -10,6 +10,7 @@ import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
 import { buildPayNowPayload } from "@/lib/paynow";
 import { receiptCheckEnabled, StoredFindings } from "@/lib/receipt-check";
+import { rejectionReason } from "@/lib/receipt-fixes";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { CLAIM_COLUMNS, isFinance, PAYOUT_LABEL, type Claim, type ClaimEvent, type Member, type ReceiptCheck } from "@/lib/types";
@@ -157,7 +158,8 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
               <CardHeader><CardTitle>{claim.status === "pending_finance" ? "Finance approval" : "Your review"}</CardTitle></CardHeader>
               <CardContent>
                 <ReviewActions claimId={claim.id} canApprove canReject
-                  approveLabel={claim.status === "pending_finance" ? "Approve for payment" : "Approve"} />
+                  approveLabel={claim.status === "pending_finance" ? "Approve for payment" : "Approve"}
+                  suggestedReason={check && rejectionReason(check)} />
               </CardContent>
             </Card>
           )}

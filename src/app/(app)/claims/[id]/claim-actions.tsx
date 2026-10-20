@@ -9,7 +9,11 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 
-export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: { claimId: string; canApprove: boolean; canReject: boolean; approveLabel: string }) {
+// `suggestedReason`: what the reviewer's own AI receipt check found for the claimant to fix, offered
+// to fill the reason with. They read and edit it before rejecting.
+export function ReviewActions({ claimId, canApprove, canReject, approveLabel, suggestedReason }: {
+  claimId: string; canApprove: boolean; canReject: boolean; approveLabel: string; suggestedReason?: string | null;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +33,15 @@ export function ReviewActions({ claimId, canApprove, canReject, approveLabel }: 
       {error && <Alert>{error}</Alert>}
       {rejecting ? (
         <>
-          <Field label="Reason (sent to the claimant)">
+          <Field label="Reason (sent to the claimant)"
+            hint={suggestedReason ? "If you use the AI check's findings, read them first: the AI can be wrong." : undefined}>
             <Textarea maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Receipt is unreadable; please re-upload." />
           </Field>
+          {suggestedReason && reason !== suggestedReason && (
+            <Button size="sm" variant="outline" className="justify-self-start" onClick={() => setReason(suggestedReason)}>
+              Use the AI check&apos;s findings
+            </Button>
+          )}
           <div className="flex gap-2">
             <Button variant="destructive" disabled={pending} onClick={() => run(() => decideClaim(claimId, false, reason))}>Reject claim</Button>
             <Button variant="ghost" onClick={() => setRejecting(false)}>Cancel</Button>
