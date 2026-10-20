@@ -123,6 +123,7 @@ const clipOrNull = (s: string | null, n: number) => (s === null ? null : clip(s,
  * The check as saved: a result (or none, when no file could be read) with its text and lists cut
  * down, so it always fits receipt_checks (a summary of 1 to 1,000 characters, findings well under
  * its size limit) however long the answer came back. A save that failed would cost a re-check.
+ * A check that left a file out never says the claim looks right: nobody read that file.
  */
 export function savedCheck(result: CheckResult | null, skipped: Skipped[]): {
   verdict: CheckResult["verdict"]; summary: string; findings: StoredFindings;
@@ -131,7 +132,7 @@ export function savedCheck(result: CheckResult | null, skipped: Skipped[]): {
   if (!result) return { verdict: "unreadable", summary: "None of the attached files could be read.", findings: { documents: [], skipped: left } };
   const { verdict, summary, documents, fields, missing, concerns, ...rest } = result;
   return {
-    verdict,
+    verdict: verdict === "looks_right" && skipped.length > 0 ? "check_needed" : verdict,
     summary: clip(summary.trim(), 1000) || "No summary was given.",
     findings: {
       ...rest,

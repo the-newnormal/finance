@@ -156,6 +156,16 @@ describe("savedCheck", () => {
     });
   });
 
+  it("never says a claim looks right when a file was left out", () => {
+    const result: CheckResult = { verdict: "looks_right", summary: "Matches.", documents: [], document_kind: "receipt", fields: [],
+      amount_matches: "yes", date_matches: "yes", missing: [], concerns: [] };
+    expect(savedCheck(result, []).verdict).toBe("looks_right");
+    const saved = savedCheck(result, [{ name: "p.heic", reason: "HEIC photos can't be read" }]);
+    expect(saved.verdict).toBe("check_needed");
+    expect(saved.findings.skipped).toEqual([{ name: "p.heic", reason: "HEIC photos can't be read" }]);
+    expect(savedCheck({ ...result, verdict: "unreadable" }, [{ name: "p.heic", reason: "x" }]).verdict).toBe("unreadable");
+  });
+
   it("refuses findings that aren't a check's shape", () => {
     expect(StoredFindings.safeParse({ fields: "x" }).success).toBe(false);
   });
