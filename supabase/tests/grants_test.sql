@@ -16,7 +16,7 @@ where c.relkind in ('r', 'v', 'm', 'p')
 select has_table('public', t, format('%s exists', t))
 from unnest(array['divisions', 'members', 'division_leads', 'member_payouts', 'categories', 'budgets',
                   'budget_categories', 'budget_guidelines', 'claims', 'claim_events', 'bank_accounts',
-                  'bank_entries']) t;
+                  'bank_entries', 'reserve_additions', 'claim_rules']) t;
 select has_view('public', v, format('%s exists', v))
 from unnest(array['guideline_totals', 'budget_totals', 'bank_balances']) v;
 
