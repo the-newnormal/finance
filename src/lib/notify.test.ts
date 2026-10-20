@@ -38,7 +38,7 @@ function service() {
 
 const claim = (over: Row = {}) => ({
   id: CLAIM, status: "pending_review", division_id: DIVISION, claimant_id: VOL, claimant_name: "Vol One",
-  amount_cents: 2500, kind: "reimbursement", vendor_name: null, budget_id: "b1", ...over,
+  amount_cents: 2500, kind: "reimbursement", description: "Taxi to the venue", vendor_name: null, budget_id: "b1", ...over,
 });
 const sentTo = () => vi.mocked(sendEmail).mock.calls.map((c) => c[0]);
 
@@ -65,10 +65,11 @@ describe("emailReviewers", () => {
   it("emails the leads of the claim's division when it awaits review", async () => {
     await emailReviewers(CLAIM, "pending_review");
     expect(sentTo()).toEqual(["lead@x.sg"]);
-    const [, subject, paragraphs, link] = vi.mocked(sendEmail).mock.calls[0];
-    expect(subject).toBe("A claim is waiting for your review");
-    expect(paragraphs).toEqual(["Hi Lee,", expect.stringContaining("Vol One has submitted a claim of $25.00 for Iftar")]);
-    expect(link).toEqual({ href: `/claims/${CLAIM}`, label: "Review claim" });
+    const [, email] = vi.mocked(sendEmail).mock.calls[0];
+    expect(email.subject).toBe("Claim to review: $25.00 from Vol One");
+    expect(email.paragraphs).toEqual(["Hi Lee,", expect.stringContaining("Vol One has submitted a claim.")]);
+    expect(email.details).toEqual([["For", "Taxi to the venue"], ["Amount", "$25.00"], ["Budget", "Iftar"]]);
+    expect(email.link).toEqual({ href: `/claims/${CLAIM}`, label: "Review claim" });
   });
 
   it("emails Finance instead when the division has no active lead", async () => {
@@ -81,7 +82,7 @@ describe("emailReviewers", () => {
     db.claims = [claim({ status: "pending_finance" })];
     await emailReviewers(CLAIM, "pending_finance", FIN);
     expect(sentTo()).toEqual(["fin2@x.sg"]);
-    expect(vi.mocked(sendEmail).mock.calls[0][1]).toBe("A claim is waiting for Finance approval");
+    expect(vi.mocked(sendEmail).mock.calls[0][1].subject).toBe("Claim for final approval: $25.00 from Vol One");
   });
 
   it("never emails the claimant, even when they are Finance", async () => {
@@ -99,7 +100,7 @@ describe("emailReviewers", () => {
   it("still emails, naming no budget, if the budget can't be read, and logs the code", async () => {
     failing.add("budgets");
     await emailReviewers(CLAIM, "pending_review");
-    expect(vi.mocked(sendEmail).mock.calls[0][2][1]).toContain("a claim of $25.00 for a budget");
+    expect(vi.mocked(sendEmail).mock.calls[0][1].details).toEqual([["For", "Taxi to the venue"], ["Amount", "$25.00"]]);
     expect(console.error).toHaveBeenCalledWith("notify reviewers lookup failed", { code: "XX000" });
   });
 
@@ -113,10 +114,11 @@ describe("emailReviewers", () => {
   it("names the vendor for an invoice", async () => {
     db.claims = [claim({ status: "pending_finance", kind: "invoice", vendor_name: "The Hall Pte Ltd", claimant_id: LEAD })];
     await emailReviewers(CLAIM, "pending_finance");
-    const [, subject, paragraphs, link] = vi.mocked(sendEmail).mock.calls[0];
-    expect(subject).toBe("An invoice is waiting for Finance approval");
-    expect(paragraphs[1]).toContain("an invoice from The Hall Pte Ltd for $25.00 (Iftar)");
-    expect(link).toMatchObject({ label: "Review invoice" });
+    const [, email] = vi.mocked(sendEmail).mock.calls[0];
+    expect(email.subject).toBe("Invoice for final approval: $25.00 from Vol One");
+    expect(email.paragraphs[1]).toContain("an invoice from The Hall Pte Ltd.");
+    expect(email.details).toContainEqual(["Vendor", "The Hall Pte Ltd"]);
+    expect(email.link).toMatchObject({ label: "Review invoice" });
   });
 
   it("emails nobody once the claim is decided", async () => {

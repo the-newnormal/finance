@@ -7,17 +7,24 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: "me" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/notify", () => ({ emailClaimant: vi.fn(), emailReviewers: vi.fn() }));
-// after() schedules work for once the response is sent; here, run it straight away.
-vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
+// after() schedules work for once the response is sent; here, run it straight away, and let a test
+// wait for it with settled().
+const scheduled = vi.hoisted(() => [] as unknown[]);
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => void scheduled.push(fn()) }));
+const settled = () => Promise.all(scheduled.splice(0));
 
 const ID = "40000000-0000-4000-8000-000000000001";
 const ACCOUNT = "50000000-0000-4000-8000-000000000001";
 const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_name: "Vol One", amount_cents: 2500, budget_name: "Iftar" };
 const rpc = vi.fn();
-// The claim's kind and vendor, read to word the email.
+// The claim's kind, description and vendor, read to word the email.
 const claimRow = vi.fn();
-const from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle: claimRow }) }) }));
-const invoice = { data: { kind: "invoice", vendor_name: "The Hall Pte Ltd" }, error: null };
+const readSignal = vi.fn();
+const from = vi.fn(() => ({
+  select: () => ({ eq: () => ({ abortSignal: (s: AbortSignal) => (readSignal(s), { maybeSingle: claimRow }) }) }),
+}));
+const invoice = { data: { kind: "invoice", description: "Venue rental", vendor_name: "The Hall Pte Ltd" }, error: null };
+const sent = () => vi.mocked(sendEmail).mock.calls[0][1];
 
 function returns(result: { data?: unknown; error?: unknown }) {
   rpc.mockReturnValue({ single: () => Promise.resolve({ data: null, error: null, ...result }) });
@@ -28,7 +35,8 @@ beforeEach(() => {
   vi.mocked(sendEmail).mockReset();
   vi.mocked(emailReviewers).mockReset();
   claimRow.mockReset();
-  claimRow.mockResolvedValue({ data: { kind: "reimbursement", vendor_name: null }, error: null });
+  readSignal.mockReset();
+  claimRow.mockResolvedValue({ data: { kind: "reimbursement", description: "Taxi to the venue", vendor_name: null }, error: null });
   vi.mocked(createClient).mockResolvedValue({ rpc, from } as never);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -58,17 +66,18 @@ describe("decideClaim", () => {
   it("emails the claimant on final approval", async () => {
     returns({ data: { ...outcome, status: "approved" } });
     await decideClaim(ID, true);
-    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "Your claim for $25.00 has been approved", expect.any(Array), expect.any(Object));
+    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", expect.objectContaining({ subject: "Your claim for $25.00 has been approved" }));
+    expect(sent().details).toEqual([["For", "Taxi to the venue"], ["Amount", "$25.00"], ["Budget", "Iftar"]]);
   });
 
   it("tells the submitter of a vendor invoice that Finance pays the vendor", async () => {
     returns({ data: { ...outcome, status: "approved" } });
     claimRow.mockResolvedValue(invoice);
     await decideClaim(ID, true);
-    const [, subject, paragraphs] = vi.mocked(sendEmail).mock.calls[0];
-    expect(subject).toBe("Your invoice for $25.00 has been approved");
-    expect(paragraphs.join(" ")).toContain("(The Hall Pte Ltd, $25.00) has been approved by Finance, who will pay the vendor directly");
-    expect(paragraphs.join(" ")).not.toContain("You'll be paid");
+    expect(sent().subject).toBe("Your invoice for $25.00 has been approved");
+    expect(sent().paragraphs.join(" ")).toContain("Finance has approved the invoice you submitted and will pay The Hall Pte Ltd directly");
+    expect(sent().paragraphs.join(" ")).not.toContain("You'll be paid");
+    expect(sent().details).toContainEqual(["Vendor", "The Hall Pte Ltd"]);
   });
 
   it("skips the email, not the decision, if the claim can't be read to word it", async () => {
@@ -81,7 +90,61 @@ describe("decideClaim", () => {
   it("emails the reason on rejection", async () => {
     returns({ data: { ...outcome, status: "rejected" } });
     await decideClaim(ID, false, " Blurry receipt ");
-    expect(vi.mocked(sendEmail).mock.calls[0][2]).toContain("Reason: Blurry receipt");
+    await settled();
+    expect(sent()).toMatchObject({ subject: "Your claim for $25.00 needs attention", callout: { label: "Reason", text: "Blurry receipt" } });
+  });
+
+  it("still emails a rejection's reason if the claim can't be read to word it", async () => {
+    returns({ data: { ...outcome, status: "rejected" } });
+    claimRow.mockResolvedValue({ data: null, error: { code: "XX000" } });
+    await decideClaim(ID, false, "Blurry receipt");
+    await settled();
+    expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" }, details: [["Amount", "$25.00"], ["Budget", "Iftar"]] });
+  });
+
+  it("doesn't keep the reviewer waiting on the read behind a rejection's email", async () => {
+    returns({ data: { ...outcome, status: "rejected" } });
+    claimRow.mockReturnValue(new Promise(() => {})); // a read that never comes back
+    expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
+    scheduled.splice(0);
+  });
+
+  it("gives up on that read after 5 seconds, so the email still goes out", async () => {
+    vi.useFakeTimers();
+    // AbortSignal.timeout runs on a timer fake timers can't reach; this one aborts on setTimeout,
+    // which they can.
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const ac = new AbortController();
+      setTimeout(() => ac.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), ms);
+      return ac.signal;
+    });
+    // A read that only ends when its signal aborts it, reported as supabase-js does: an error with no code.
+    claimRow.mockImplementation(() => new Promise((resolve) => {
+      const signal = readSignal.mock.calls.at(-1)![0] as AbortSignal;
+      signal.addEventListener("abort", () => resolve({ data: null, error: { code: "", message: `${signal.reason.name}: ${signal.reason.message}` } }));
+    }));
+    returns({ data: { ...outcome, status: "rejected" } });
+    try {
+      expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(sendEmail).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await settled();
+      expect(timeout).toHaveBeenCalledWith(5_000);
+      expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" }, details: [["Amount", "$25.00"], ["Budget", "Iftar"]] });
+      expect(console.error).toHaveBeenCalledWith("notify claim read failed", { code: "fetch_failed" });
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("calls a rejected invoice an invoice", async () => {
+    returns({ data: { ...outcome, status: "rejected" } });
+    claimRow.mockResolvedValue(invoice);
+    await decideClaim(ID, false, "Wrong vendor");
+    await settled();
+    expect(sent()).toMatchObject({ subject: "Your invoice for $25.00 needs attention", heading: "Your invoice wasn't approved" });
   });
 
   it("shows the database's refusal", async () => {
@@ -111,16 +174,15 @@ describe("markPaid", () => {
     returns({ data: { ...outcome, status: "paid" } });
     expect(await markPaid(ID, "TXN-1", ACCOUNT)).toEqual({ ok: true });
     expect(rpc).toHaveBeenCalledWith("mark_paid", { p_claim: ID, p_reference: "TXN-1", p_account: ACCOUNT });
-    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "You've been paid $25.00", expect.any(Array));
+    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", expect.objectContaining({ subject: "You've been paid $25.00" }));
   });
 
   it("tells the submitter of a vendor invoice that the vendor was paid", async () => {
     returns({ data: { ...outcome, status: "paid" } });
     claimRow.mockResolvedValue(invoice);
     await markPaid(ID, "TXN-1", ACCOUNT);
-    const [, subject, paragraphs] = vi.mocked(sendEmail).mock.calls[0];
-    expect(subject).toBe("Your invoice for $25.00 has been paid");
-    expect(paragraphs.join(" ")).toContain("We've paid The Hall Pte Ltd $25.00");
+    expect(sent().subject).toBe("Your invoice for $25.00 has been paid");
+    expect(sent().paragraphs.join(" ")).toContain("We've paid The Hall Pte Ltd $25.00");
   });
 
   it("needs the account it was paid from", async () => {

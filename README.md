@@ -38,8 +38,8 @@ pnpm typecheck && pnpm lint && pnpm test
 ## Deploying (Supabase + Vercel)
 1. **Supabase project** (region Singapore). Link and push the schema: `pnpm supabase link --project-ref <ref>` then `pnpm supabase db push`.
 2. **Authentication → Sign In / Providers:** Email on, **"Allow new users to sign up" off**. No other providers.
-3. **Authentication → URL Configuration:** Site URL = the production URL; redirect URLs include `<production URL>/auth/callback**`.
-4. **Authentication → Emails → Templates:** paste `supabase/templates/magic-link.html` (Magic link) and `supabase/templates/invite.html` (Invite user). Supabase's default links don't work with `/auth/callback`.
+3. **Authentication → URL Configuration:** Site URL = the production URL, with no trailing slash (the sign-in emails add `/email-logo.png` to it); redirect URLs include `<production URL>/auth/callback**`.
+4. **Authentication → Emails → Templates:** paste `supabase/templates/magic-link.html` (Magic link) and `supabase/templates/invite.html` (Invite user). Supabase's default links don't work with `/auth/callback`. They match the app's own emails (`src/lib/email-template.ts`), so change both together.
 5. **Authentication → Emails → SMTP Settings:** your sender (e.g. Gmail SMTP with an app password). Supabase's built-in sender only mails your Supabase team, two emails an hour.
 6. **Vercel:** import the repo, then set the environment variables from `.env.example`. Mark `SUPABASE_SERVICE_ROLE_KEY`, `PAYOUT_ENCRYPTION_KEY` and `SMTP_PASSWORD` as Sensitive, and never give them a `NEXT_PUBLIC_` prefix. Generate the encryption key with `pnpm gen-key` and keep a copy in a password manager: saved payout details can't be read without it.
 7. **First Finance member:** in Supabase → Authentication → Users, choose **Add user → Create new user** with your email and **Auto Confirm User** ticked (don't use "Send invitation": the dashboard's invite has no link back to this app). Then in the SQL editor:
