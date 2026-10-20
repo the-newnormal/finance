@@ -109,17 +109,34 @@ describe("decideClaim", () => {
     scheduled.splice(0);
   });
 
-  it("gives up on that read after a few seconds, so the email still goes out", async () => {
+  it("gives up on that read after 5 seconds, so the email still goes out", async () => {
+    vi.useFakeTimers();
+    // AbortSignal.timeout runs on a timer fake timers can't reach; this one aborts on setTimeout,
+    // which they can.
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const ac = new AbortController();
+      setTimeout(() => ac.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")), ms);
+      return ac.signal;
+    });
+    // A read that only ends when its signal aborts it, reported as supabase-js does: an error with no code.
+    claimRow.mockImplementation(() => new Promise((resolve) => {
+      const signal = readSignal.mock.calls.at(-1)![0] as AbortSignal;
+      signal.addEventListener("abort", () => resolve({ data: null, error: { code: "", message: `${signal.reason.name}: ${signal.reason.message}` } }));
+    }));
     returns({ data: { ...outcome, status: "rejected" } });
-    // What supabase-js returns once the read's signal times it out: an error with no code.
-    claimRow.mockResolvedValue({ data: null, error: { code: "", message: "TimeoutError: The operation was aborted due to timeout" } });
-    await decideClaim(ID, false, "Blurry receipt");
-    await settled();
-    const signal = readSignal.mock.calls[0][0] as AbortSignal;
-    expect(signal).toBeInstanceOf(AbortSignal);
-    expect(signal.aborted).toBe(false); // a time limit, not an immediate abort
-    expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" } });
-    expect(console.error).toHaveBeenCalledWith("notify claim read failed", { code: "fetch_failed" });
+    try {
+      expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(sendEmail).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await settled();
+      expect(timeout).toHaveBeenCalledWith(5_000);
+      expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" }, details: [["Amount", "$25.00"], ["Budget", "Iftar"]] });
+      expect(console.error).toHaveBeenCalledWith("notify claim read failed", { code: "fetch_failed" });
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("calls a rejected invoice an invoice", async () => {
