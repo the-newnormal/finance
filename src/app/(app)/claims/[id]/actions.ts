@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
-import { emailClaimant } from "@/lib/notify";
+import { emailClaimant, emailReviewers } from "@/lib/notify";
 import { formatSGD } from "@/lib/money";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -37,7 +37,7 @@ async function kindOf(supabase: Awaited<ReturnType<typeof createClient>>, id: st
 }
 
 export async function decideClaim(id: string, approve: boolean, reason?: string): Promise<ActionResult> {
-  await requireMember();
+  const me = await requireMember();
   if (!uuid.safeParse(id).success) return { ok: false, error: "Claim not found." };
   if ((reason?.trim().length ?? 0) > 500) return { ok: false, error: "Keep the reason under 500 characters." };
   const supabase = await createClient();
@@ -70,6 +70,9 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
       `Reason: ${reason?.trim()}`,
       "You're welcome to submit a new claim with the corrections.",
     ], { href: `/claims/${id}`, label: "View claim" }));
+  } else if (data.status === "pending_finance") {
+    // Reviewed: tell Finance it's waiting for final approval, except whoever just reviewed it.
+    after(() => emailReviewers(id, "pending_finance", me.id));
   }
 
   revalidatePath(`/claims/${id}`);

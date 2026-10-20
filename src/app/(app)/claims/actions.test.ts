@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decryptPayout, encryptPayout } from "@/lib/crypto";
+import { emailReviewers } from "@/lib/notify";
 import { createClient } from "@/lib/supabase/server";
 import { submitClaim, type ClaimInput } from "./actions";
 
@@ -8,6 +9,9 @@ const ME = "00000000-0000-4000-8000-000000000001";
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: ME, role: "volunteer" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/notify", () => ({ emailReviewers: vi.fn() }));
+// after() schedules work for once the response is sent; here, run it straight away.
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
 function table(result: { data?: unknown; error: unknown }) {
   const q: Record<string, unknown> = {};
@@ -21,7 +25,8 @@ let tables: Record<string, ReturnType<typeof table>>;
 
 beforeEach(() => {
   vi.stubEnv("PAYOUT_ENCRYPTION_KEY", randomBytes(32).toString("base64"));
-  tables = { claims: table({ data: { id: "claim-1" }, error: null }), member_payouts: table({ data: null, error: null }) };
+  vi.mocked(emailReviewers).mockClear();
+  tables = { claims: table({ data: { id: "claim-1", status: "pending_review" }, error: null }), member_payouts: table({ data: null, error: null }) };
   vi.mocked(createClient).mockResolvedValue({ from: (t: string) => tables[t] } as never);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -79,6 +84,20 @@ describe("submitClaim", () => {
     expect(tables.claims.insert).toHaveBeenCalledWith(expect.objectContaining({ submission_id: base.submissionId }));
     tables.claims = table({ data: { id: "claim-1" }, error: { code: "23505", message: "duplicate" } });
     expect(await submitClaim(base)).toEqual({ ok: true, id: "claim-1", payoutSaved: true });
+  });
+
+  it("tells the claim's reviewers it's waiting, once: not again on a retry", async () => {
+    await submitClaim(base);
+    expect(emailReviewers).toHaveBeenCalledExactlyOnceWith("claim-1", "pending_review");
+    tables.claims = table({ data: { id: "claim-1" }, error: { code: "23505", message: "duplicate" } });
+    await submitClaim(base);
+    expect(emailReviewers).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells nobody about a claim the database refused", async () => {
+    tables.claims = table({ data: null, error: { code: "P0001", message: "That budget is not open for claims." } });
+    await submitClaim(base);
+    expect(emailReviewers).not.toHaveBeenCalled();
   });
 
   it("on a retry, saves the payout details again and reports that attempt", async () => {
