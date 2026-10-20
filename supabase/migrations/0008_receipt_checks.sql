@@ -10,7 +10,14 @@
 -- (the function takes its result from its caller). record_receipt_check accepts only a reviewer who
 -- could decide the claim now: a lead of its division, or Finance, while it awaits review; Finance
 -- alone once it awaits final approval. Never its claimant (Finance excepted, as Finance may finalise
--- its own claims).
+-- its own claims). A reviewer reads their checks only while they can still review the claim's division.
+--
+-- Only claims whose claimant was told are checked: the claim form says the files may be read by an AI
+-- service only while the check is on, and the claim records that it did (ai_check_notice, set when
+-- the claim is submitted). Claims made before, or while the check was off, are never sent.
+
+alter table public.claims add column ai_check_notice boolean not null default false;
+grant select (ai_check_notice), insert (ai_check_notice) on public.claims to authenticated;
 
 create type public.receipt_verdict as enum ('looks_right', 'check_needed', 'unreadable');
 
@@ -31,8 +38,10 @@ alter table public.receipt_checks enable row level security;
 revoke all on public.receipt_checks from anon, authenticated;
 grant select on public.receipt_checks to authenticated;
 
-create policy receipt_checks_select on public.receipt_checks for select to authenticated
-  using (checked_by = (select auth.uid()) and private.is_active());
+create policy receipt_checks_select on public.receipt_checks for select to authenticated using (
+  checked_by = (select auth.uid()) and private.is_active()
+  and exists (select 1 from public.claims c where c.id = claim_id and private.in_purview(c.division_id))
+);
 
 create function public.record_receipt_check(p_claim uuid, p_verdict public.receipt_verdict, p_summary text,
   p_findings jsonb, p_files_checked int, p_model text)
@@ -53,6 +62,9 @@ begin
   end if;
   if v_claim.status = 'pending_finance' and v_me.role <> 'finance' then
     raise exception 'Only Finance checks a claim awaiting final approval.' using errcode = '42501';
+  end if;
+  if not v_claim.ai_check_notice then
+    raise exception 'This claim was made before claimants were told about the AI check, so it isn''t checked.';
   end if;
   insert into public.receipt_checks (claim_id, checked_by, verdict, summary, findings, files_checked, model)
   values (v_claim.id, v_me.id, p_verdict, left(btrim(p_summary), 1000), p_findings, p_files_checked, p_model)

@@ -26,9 +26,9 @@ export async function checkReceipts(id: string): Promise<CheckActionResult> {
 
   const { data: claim, error } = await supabase
     .from("claims")
-    .select("id, kind, status, claimant_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, attachment_paths")
+    .select("id, kind, status, claimant_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, attachment_paths, ai_check_notice")
     .eq("id", id)
-    .maybeSingle<Pick<Claim, "id" | "kind" | "status" | "claimant_id" | "budget_id" | "category_id" | "description" | "amount_cents" | "expense_date" | "vendor_name" | "attachment_paths">>();
+    .maybeSingle<Pick<Claim, "id" | "kind" | "status" | "claimant_id" | "budget_id" | "category_id" | "description" | "amount_cents" | "expense_date" | "vendor_name" | "attachment_paths"> & { ai_check_notice: boolean }>();
   if (error) return failed("claim_read", error.code);
   if (!claim) return { ok: false, error: "Claim not found." };
   // The database checks these again; checking first saves paying for a check it would refuse.
@@ -38,6 +38,10 @@ export async function checkReceipts(id: string): Promise<CheckActionResult> {
   }
   if (claim.status === "pending_finance" && me.role !== "finance") {
     return { ok: false, error: "Only Finance checks a claim awaiting final approval." };
+  }
+  // Its claimant wasn't told the files may be read by an AI service, so they aren't sent.
+  if (!claim.ai_check_notice) {
+    return { ok: false, error: "This claim was made before claimants were told about the AI check, so it isn't checked." };
   }
 
   // The check needs the claim's budget, category and rules: if any can't be read, it isn't run (a

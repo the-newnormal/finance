@@ -73,7 +73,14 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
     if (findings && !findings.success) console.error("receipt check findings malformed");
     check = data && findings?.success ? { ...data, findings: findings.data } : null;
   }
-  const canRunCheck = may.runCheck && aiEnabled;
+  // Only a claim whose claimant was told about the check is checked (ai_check_notice, 0008).
+  let told = false;
+  if (aiEnabled && may.runCheck) {
+    const { data, error: noticeError } = await supabase.from("claims").select("ai_check_notice").eq("id", claim.id).maybeSingle();
+    if (noticeError) console.error("receipt check notice read failed", { code: noticeError.code });
+    told = data?.ai_check_notice === true;
+  }
+  const canRunCheck = may.runCheck && aiEnabled && told;
   // Finance only (RLS on bank_balances); everyone else gets none.
   const { data: accounts, error: accountsError } = may.markPaid
     ? await supabase.from("bank_balances").select("account_id, name, last4, balance_cents").eq("active", true).order("name")

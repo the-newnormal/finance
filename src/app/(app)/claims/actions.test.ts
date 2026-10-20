@@ -119,6 +119,14 @@ describe("submitClaim", () => {
     expect(await submitClaim({ ...base, savePayout: true })).toEqual({ ok: true, id: "claim-1", payoutSaved: false });
   });
 
+  it("records that the claimant was told about the AI receipt check only while it is on", async () => {
+    await submitClaim(base);
+    expect((tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]).not.toHaveProperty("ai_check_notice");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-test");
+    await submitClaim({ ...base, submissionId: "60000000-0000-4000-8000-000000000002" });
+    expect((tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[1][0]).toMatchObject({ ai_check_notice: true });
+  });
+
   it("refuses a future purchase date", async () => {
     expect(await submitClaim({ ...base, expenseDate: "2999-01-01" })).toEqual({ ok: false, error: "The purchase date can't be in the future." });
     expect(tables.claims.insert).not.toHaveBeenCalled();

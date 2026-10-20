@@ -12,11 +12,12 @@ end $$;
 create function pg_temp.claim(p_desc text) returns uuid language sql security definer as $$
   select id from public.claims where description = p_desc
 $$;
-create function pg_temp.submit(p_desc text) returns void language sql as $$
+-- The claim form told the claimant about the AI check unless p_told is false.
+create function pg_temp.submit(p_desc text, p_told boolean default true) returns void language sql as $$
   insert into public.claims (budget_id, category_id, description, amount_cents, attachment_paths,
-                             payout_type, payout_masked, payout_enc, submission_id)
+                             payout_type, payout_masked, payout_enc, submission_id, ai_check_notice)
   values ('0d400000-0000-4000-8000-000000000001', '0d300000-0000-4000-8000-000000000001', p_desc, 2540,
-          array[auth.uid()::text || '/x/r.jpg'], 'bank', 'DBS •••• 1', 'v1.a.b.c', gen_random_uuid())
+          array[auth.uid()::text || '/x/r.jpg'], 'bank', 'DBS •••• 1', 'v1.a.b.c', gen_random_uuid(), p_told)
 $$;
 create function pg_temp.record(p_desc text, p_summary text default 'The receipt matches.') returns void language sql as $$
   select public.record_receipt_check(pg_temp.claim(p_desc), 'looks_right', p_summary, '{"documents": []}', 1, 'claude-haiku-5-5')
@@ -49,6 +50,7 @@ select 'receipts', id::text || '/x/r.jpg' from public.members where email like '
 
 select pg_temp.login('0d100000-0000-4000-8000-000000000004');
 select pg_temp.submit('RC vol claim');
+select pg_temp.submit('RC untold claim', false);
 select pg_temp.login('0d100000-0000-4000-8000-000000000002');
 select pg_temp.submit('RC lead claim');
 select pg_temp.login('0d100000-0000-4000-8000-000000000001');
@@ -67,6 +69,9 @@ select throws_ok($$ select pg_temp.record('RC vol claim') $$, 'P0002', 'Claim no
 
 select pg_temp.login('0d100000-0000-4000-8000-000000000002');
 select lives_ok($$ select pg_temp.record('RC vol claim', 'Lead: fine.') $$, 'a lead of the claim''s division records one');
+select throws_ok($$ select pg_temp.record('RC untold claim') $$, 'P0001',
+  'This claim was made before claimants were told about the AI check, so it isn''t checked.',
+  'but not on a claim whose claimant wasn''t told about the check');
 select throws_ok($$ select pg_temp.record('RC lead claim') $$, '42501', 'You can''t check your own claim.',
   'but not on their own claim');
 
@@ -100,6 +105,14 @@ select pg_temp.login('0d100000-0000-4000-8000-000000000003');
 select is_empty($$ select 1 from public.receipt_checks $$, 'a lead of another division reads none');
 select pg_temp.login('0d100000-0000-4000-8000-000000000004');
 select is_empty($$ select 1 from public.receipt_checks $$, 'the claimant reads none, not even their own claim''s');
+
+-- A lead who no longer leads the division no longer reads their checks on its claims.
+select pg_temp.login('0d100000-0000-4000-8000-000000000002');
+select isnt_empty($$ select 1 from public.receipt_checks $$, 'the division''s lead reads their own check');
+select pg_temp.login('0d100000-0000-4000-8000-000000000001');
+delete from public.division_leads where member_id = '0d100000-0000-4000-8000-000000000002';
+select pg_temp.login('0d100000-0000-4000-8000-000000000002');
+select is_empty($$ select 1 from public.receipt_checks $$, 'but not once they no longer lead it, though still active');
 
 select * from finish();
 rollback;

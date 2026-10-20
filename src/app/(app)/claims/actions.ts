@@ -7,6 +7,7 @@ import { assertPayoutKey, decryptPayout, encryptPayout, maskPayout, type PayoutD
 import { parseAmountToCents } from "@/lib/money";
 import { emailReviewers } from "@/lib/notify";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
+import { receiptCheckEnabled } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
 import { singaporeToday } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
@@ -124,6 +125,9 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
       payout_masked,
       payout_enc,
       submission_id: v.submissionId,
+      // The form tells claimants about the AI receipt check exactly when it's on, and only claims
+      // that say so are checked (0008). Sent only then, so claims go in before 0008 is applied.
+      ...(receiptCheckEnabled() ? { ai_check_notice: true } : {}),
     })
     .select("id, status")
     .single();

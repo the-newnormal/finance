@@ -20,7 +20,7 @@ const LEAD = "00000000-0000-4000-8000-000000000002";
 const claimRow = {
   id: ID, kind: "reimbursement", status: "pending_review", claimant_id: VOL, budget_id: "b1", category_id: "c1",
   description: "Taxi", amount_cents: 2540, expense_date: "2026-10-01", vendor_name: null,
-  attachment_paths: [`${VOL}/x/3f2a9c1e-receipt.jpg`],
+  attachment_paths: [`${VOL}/x/3f2a9c1e-receipt.jpg`], ai_check_notice: true,
 };
 let claim: Record<string, unknown> | null;
 let files: Record<string, Blob>;
@@ -109,6 +109,15 @@ describe("checkReceipts", () => {
     expect(runReceiptCheck).not.toHaveBeenCalled();
     vi.mocked(requireMember).mockResolvedValue({ id: LEAD, role: "finance" } as never);
     expect(await checkReceipts(ID)).toEqual({ ok: true });
+  });
+
+  it("never sends the files of a claim whose claimant wasn't told about the check", async () => {
+    claim = { ...claimRow, ai_check_notice: false };
+    expect(await checkReceipts(ID)).toEqual({
+      ok: false, error: "This claim was made before claimants were told about the AI check, so it isn't checked.",
+    });
+    expect(runReceiptCheck).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("does nothing when the server has no API key", async () => {
