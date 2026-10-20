@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { assertPayoutKey, decryptPayout, encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
 import { parseAmountToCents } from "@/lib/money";
+import { emailReviewers } from "@/lib/notify";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { requireMember } from "@/lib/session";
 import { singaporeToday } from "@/lib/dates";
@@ -147,6 +149,10 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
       payoutSaved = false;
     }
   }
+
+  // Tell whoever reviews it that it's waiting, after the response. Only for a claim this attempt
+  // made: on a retry, the first attempt already did.
+  if (!error) after(() => emailReviewers(claimId!));
 
   revalidatePath("/claims");
   return { ok: true, id: claimId!, payoutSaved };

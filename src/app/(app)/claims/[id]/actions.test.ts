@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { emailClaimant as sendEmail } from "@/lib/notify";
+import { emailClaimant as sendEmail, emailReviewers } from "@/lib/notify";
 import { createClient } from "@/lib/supabase/server";
 import { decideClaim, markPaid } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: "me" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/notify", () => ({ emailClaimant: vi.fn() }));
+vi.mock("@/lib/notify", () => ({ emailClaimant: vi.fn(), emailReviewers: vi.fn() }));
 // after() schedules work for once the response is sent; here, run it straight away.
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 
@@ -26,6 +26,7 @@ function returns(result: { data?: unknown; error?: unknown }) {
 beforeEach(() => {
   rpc.mockReset();
   vi.mocked(sendEmail).mockReset();
+  vi.mocked(emailReviewers).mockReset();
   claimRow.mockReset();
   claimRow.mockResolvedValue({ data: { kind: "reimbursement", vendor_name: null }, error: null });
   vi.mocked(createClient).mockResolvedValue({ rpc, from } as never);
@@ -39,10 +40,19 @@ describe("decideClaim", () => {
     expect(rpc).toHaveBeenCalledWith("decide_claim", { p_claim: ID, p_approve: true, p_reason: null });
   });
 
-  it("emails nobody when a review only sends it on to Finance", async () => {
+  it("tells Finance, not the claimant, when a review sends it on to Finance", async () => {
     returns({ data: { ...outcome, status: "pending_finance" } });
     await decideClaim(ID, true);
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(emailReviewers).toHaveBeenCalledExactlyOnceWith(ID, "me");
+  });
+
+  it("tells no reviewer once Finance has decided", async () => {
+    returns({ data: { ...outcome, status: "approved" } });
+    await decideClaim(ID, true);
+    returns({ data: { ...outcome, status: "rejected" } });
+    await decideClaim(ID, false, "Blurry receipt");
+    expect(emailReviewers).not.toHaveBeenCalled();
   });
 
   it("emails the claimant on final approval", async () => {
