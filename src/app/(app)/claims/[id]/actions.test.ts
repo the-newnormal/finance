@@ -19,7 +19,10 @@ const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_
 const rpc = vi.fn();
 // The claim's kind, description and vendor, read to word the email.
 const claimRow = vi.fn();
-const from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle: claimRow }) }) }));
+const readSignal = vi.fn();
+const from = vi.fn(() => ({
+  select: () => ({ eq: () => ({ abortSignal: (s: AbortSignal) => (readSignal(s), { maybeSingle: claimRow }) }) }),
+}));
 const invoice = { data: { kind: "invoice", description: "Venue rental", vendor_name: "The Hall Pte Ltd" }, error: null };
 const sent = () => vi.mocked(sendEmail).mock.calls[0][1];
 
@@ -32,6 +35,7 @@ beforeEach(() => {
   vi.mocked(sendEmail).mockReset();
   vi.mocked(emailReviewers).mockReset();
   claimRow.mockReset();
+  readSignal.mockReset();
   claimRow.mockResolvedValue({ data: { kind: "reimbursement", description: "Taxi to the venue", vendor_name: null }, error: null });
   vi.mocked(createClient).mockResolvedValue({ rpc, from } as never);
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -103,6 +107,19 @@ describe("decideClaim", () => {
     claimRow.mockReturnValue(new Promise(() => {})); // a read that never comes back
     expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
     scheduled.splice(0);
+  });
+
+  it("gives up on that read after a few seconds, so the email still goes out", async () => {
+    returns({ data: { ...outcome, status: "rejected" } });
+    // What supabase-js returns once the read's signal times it out: an error with no code.
+    claimRow.mockResolvedValue({ data: null, error: { code: "", message: "TimeoutError: The operation was aborted due to timeout" } });
+    await decideClaim(ID, false, "Blurry receipt");
+    await settled();
+    const signal = readSignal.mock.calls[0][0] as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal.aborted).toBe(false); // a time limit, not an immediate abort
+    expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" } });
+    expect(console.error).toHaveBeenCalledWith("notify claim read failed", { code: "fetch_failed" });
   });
 
   it("calls a rejected invoice an invoice", async () => {

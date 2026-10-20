@@ -25,14 +25,16 @@ function refusal(error: { code?: string; message: string }): ActionResult {
 
 // Whether the claim is a vendor invoice, to word its email (Finance pays the vendor, not the
 // claimant), and what it was for, to name it. Read as the caller, who has just decided or paid it,
-// so RLS shows it to them. null if the read fails; an approval's or payment's email is then
-// skipped, since its wording would be a guess.
+// so RLS shows it to them. null if the read fails or takes over 5 seconds; an approval's or
+// payment's email is then skipped, since its wording would be a guess.
 async function kindOf(supabase: Awaited<ReturnType<typeof createClient>>, id: string) {
   const { data, error } = await supabase
     .from("claims").select("kind, description, vendor_name").eq("id", id)
+    .abortSignal(AbortSignal.timeout(5_000))
     .maybeSingle<Pick<Claim, "kind" | "description" | "vendor_name">>();
   if (error || !data) {
-    console.error("notify claim read failed", { code: error?.code ?? "not_found" });
+    // A read cut off by the time limit (or the network) has no code of its own.
+    console.error("notify claim read failed", { code: error ? error.code || "fetch_failed" : "not_found" });
     return null;
   }
   return data;
