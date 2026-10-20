@@ -29,8 +29,10 @@ export interface Budget {
   id: string;
   name: string;
   kind: BudgetKind;
-  division_id: string;
+  /** null only for the reserve, which belongs to no division (0006). */
+  division_id: string | null;
   active: boolean;
+  is_reserve: boolean;
 }
 
 /** budget_totals: one row per budget in the viewer's purview. */
@@ -44,6 +46,9 @@ export interface BudgetTotals {
   pending_cents: number;
   approved_cents: number;
   paid_cents: number;
+  is_reserve: boolean;
+  /** The reserve's funds (the sum of its additions); 0 for every other budget. */
+  funded_cents: number;
 }
 
 /** guideline_totals: spending against one provisioned category of one budget. */
@@ -63,7 +68,8 @@ export interface Claim {
   status: ClaimStatus;
   claimant_id: string;
   claimant_name: string;
-  division_id: string;
+  /** null for reserve claims. */
+  division_id: string | null;
   budget_id: string;
   category_id: string;
   description: string;
@@ -86,6 +92,14 @@ export interface Claim {
 /** Every claims column the Data API may read (payout_enc is never granted). */
 export const CLAIM_COLUMNS =
   "id, kind, status, claimant_id, claimant_name, division_id, budget_id, category_id, description, amount_cents, expense_date, vendor_name, due_date, attachment_paths, payout_type, payout_masked, rejection_reason, payment_reference, imported, created_at, updated_at";
+
+export interface ReserveAddition {
+  id: number;
+  amount_cents: number;
+  added_on: string;
+  note: string;
+  actor_name: string;
+}
 
 export interface ClaimEvent {
   id: number;

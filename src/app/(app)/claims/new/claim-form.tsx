@@ -18,7 +18,7 @@ type Props = {
   today: string;
   canInvoice: boolean;
   goesStraightToFinance: boolean;
-  budgets: { id: string; name: string; kind: "event" | "general" }[];
+  budgets: { id: string; name: string; kind: "event" | "general"; is_reserve: boolean }[];
   /** Which categories each budget provisions: a claim may only use one of its budget's. */
   provisions: { budget_id: string; category_id: string }[];
   categories: { id: string; name: string }[];
@@ -162,11 +162,14 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
               <Select name="budgetId" required value={budgetId}
                 onChange={(e) => { setBudgetId(e.target.value); setCategoryId(""); }}>
                 <option value="" disabled>Choose one…</option>
-                {budgets.filter((b) => b.kind === "event").length > 0 && (
-                  <optgroup label="Events">{budgets.filter((b) => b.kind === "event").map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+                {budgets.filter((b) => b.kind === "event" && !b.is_reserve).length > 0 && (
+                  <optgroup label="Events">{budgets.filter((b) => b.kind === "event" && !b.is_reserve).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
                 )}
-                {budgets.filter((b) => b.kind === "general").length > 0 && (
-                  <optgroup label="Other budgets">{budgets.filter((b) => b.kind === "general").map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+                {budgets.filter((b) => b.kind === "general" && !b.is_reserve).length > 0 && (
+                  <optgroup label="Other budgets">{budgets.filter((b) => b.kind === "general" && !b.is_reserve).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+                )}
+                {budgets.some((b) => b.is_reserve) && (
+                  <optgroup label="Finance only">{budgets.filter((b) => b.is_reserve).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
                 )}
               </Select>
             </Field>

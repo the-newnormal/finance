@@ -17,11 +17,13 @@ export default async function BudgetsPage() {
   const me = await requireReviewer();
   const supabase = await createClient();
   // budget_totals is security_invoker: RLS hands each person only the budgets they have purview over.
-  const [budgets, divisions] = await Promise.all([
+  const [all, divisions] = await Promise.all([
     fetchAll<BudgetTotals>((from, to) => supabase.from("budget_totals").select("*").order("budget_id").range(from, to)),
     fetchAll<Division>((from, to) => supabase.from("divisions").select("id, name").order("id").range(from, to)),
   ]);
-  budgets.sort((a, b) => a.name.localeCompare(b.name));
+  // The reserve (Finance only) sits apart: it belongs to no division and has no guidelines.
+  const reserve = all.find((b) => b.is_reserve);
+  const budgets = all.filter((b) => !b.is_reserve).sort((a, b) => a.name.localeCompare(b.name));
   divisions.sort((a, b) => a.name.localeCompare(b.name));
   const groups = divisions
     .map((d) => ({ division: d, budgets: budgets.filter((b) => b.division_id === d.id) }))
@@ -37,6 +39,21 @@ export default async function BudgetsPage() {
         </div>
         <BudgetBar allocated={sum(budgets, "guideline_cents")} committed={sum(budgets, "approved_cents")} spent={sum(budgets, "paid_cents")} />
       </Card>
+
+      {reserve && (
+        <Link href="/reserve" className="mb-8 block">
+          <Card className="p-5 transition-shadow hover:shadow-md">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">Reserve</div>
+                <div className="text-xs text-ink-soft">Outside every division · Finance only</div>
+              </div>
+              <div className="text-right font-serif text-lg font-semibold tabular-nums">{formatSGD(Number(reserve.funded_cents))}</div>
+            </div>
+            <BudgetBar allocated={Number(reserve.funded_cents)} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
+          </Card>
+        </Link>
+      )}
 
       {groups.length === 0 && <p className="text-ink-soft">No budgets yet.</p>}
       <div className="grid gap-8">

@@ -14,7 +14,7 @@ export default async function SetupPage() {
   const [divisions, categories, budgets, guidelines] = await Promise.all([
     fetchAll<Division>((f, t) => supabase.from("divisions").select("id, name").order("id").range(f, t)),
     fetchAll<Category>((f, t) => supabase.from("categories").select("id, name, active").order("id").range(f, t)),
-    fetchAll<Budget>((f, t) => supabase.from("budgets").select("id, name, kind, division_id, active").order("id").range(f, t)),
+    fetchAll<Budget>((f, t) => supabase.from("budgets").select("id, name, kind, division_id, active, is_reserve").eq("is_reserve", false).order("id").range(f, t)),
     fetchAll<{ budget_id: string; category_id: string; guideline_cents: number }>((f, t) =>
       supabase.from("budget_guidelines").select("budget_id, category_id, guideline_cents").order("budget_id").order("category_id").range(f, t)),
   ]);
