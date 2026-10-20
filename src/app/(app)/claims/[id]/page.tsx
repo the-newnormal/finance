@@ -9,7 +9,7 @@ import { hiddenBudgetName } from "@/lib/claims";
 import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
 import { buildPayNowPayload } from "@/lib/paynow";
-import { receiptCheckEnabled } from "@/lib/receipt-check";
+import { receiptCheckEnabled, StoredFindings } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { CLAIM_COLUMNS, isFinance, PAYOUT_LABEL, type Claim, type ClaimEvent, type Member, type ReceiptCheck } from "@/lib/types";
@@ -58,17 +58,20 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   if (divisionsError) throw new Error(`divisions read failed: ${divisionsError.code}`);
   const may = permissions(me, claim, (myDivisions ?? []).map((d) => d.division_id as string));
   const payout = may.seePayout ? await payoutPanel(supabase, claim, ref) : null;
-  // The AI receipt check (RLS: the claim's reviewers only). If it can't be read, the panel is left out.
+  // This viewer's own AI receipt check (RLS: each reviewer reads only theirs). If it can't be read,
+  // the panel is left out; if what was saved isn't a check's shape, it is checked afresh.
   const aiEnabled = receiptCheckEnabled();
   let check: ReceiptCheck | null = null;
   let checkReadable = may.seeCheck;
   if (may.seeCheck) {
     const { data, error: checkError } = await supabase.from("receipt_checks")
-      .select("verdict, summary, findings, files_checked, model, checked_by_name, checked_at")
-      .eq("claim_id", claim.id).maybeSingle<ReceiptCheck>();
+      .select("verdict, summary, findings, files_checked, model, checked_at")
+      .eq("claim_id", claim.id).eq("checked_by", me.id).maybeSingle<ReceiptCheck>();
     if (checkError) console.error("receipt check read failed", { code: checkError.code });
     checkReadable = !checkError;
-    check = data ?? null;
+    const findings = data && StoredFindings.safeParse(data.findings);
+    if (findings && !findings.success) console.error("receipt check findings malformed");
+    check = data && findings?.success ? { ...data, findings: findings.data } : null;
   }
   const canRunCheck = may.runCheck && aiEnabled;
   // Finance only (RLS on bank_balances); everyone else gets none.
@@ -241,17 +244,15 @@ function permissions(me: Member, c: Claim, ledDivisions: string[]) {
     c.status === "pending_review" && !own &&
     (isFinance(me) || (me.role === "lead" && c.division_id !== null && ledDivisions.includes(c.division_id)));
   const finalises = c.status === "pending_finance" && isFinance(me);
-  const leadsIt = me.role === "lead" && c.division_id !== null && ledDivisions.includes(c.division_id);
-  const awaiting = c.status === "pending_review" || c.status === "pending_finance";
   return {
     decide: reviews || finalises,
     seePayout: isFinance(me) && (c.status === "pending_finance" || c.status === "approved"),
     markPaid: isFinance(me) && c.status === "approved",
     attach: isFinance(me) && c.imported && c.attachment_paths.length < 5,
-    // The AI receipt check: the claim's reviewers see it; they run it while it awaits a decision,
-    // never on their own claim (Finance excepted). record_receipt_check checks again.
-    seeCheck: isFinance(me) || leadsIt,
-    runCheck: awaiting && (isFinance(me) || (leadsIt && !own)),
+    // The AI receipt check: whoever can decide the claim now runs one, and each reviewer sees only
+    // their own. record_receipt_check checks again.
+    seeCheck: isFinance(me) || me.role === "lead",
+    runCheck: reviews || finalises,
   };
 }
 

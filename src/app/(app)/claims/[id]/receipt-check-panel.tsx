@@ -89,7 +89,7 @@ export function ReceiptCheckPanel({ claimId, check, canRun, autoRun }: {
             <List title="Worth a look" items={f.concerns} />
             <List title="Not read" items={f.skipped?.map((s) => `${s.name}: ${s.reason}`)} />
             <p className="text-xs text-ink-soft">
-              Advice only: look at the receipts yourself before deciding. Checked for {check.checked_by_name}, {formatDate(check.checked_at)}.
+              Advice only, and only you see it: look at the receipts yourself before deciding. Checked {formatDate(check.checked_at)}.
             </p>
           </>
         )}

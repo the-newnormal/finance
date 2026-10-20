@@ -24,6 +24,7 @@ const claimRow = {
 };
 let claim: Record<string, unknown> | null;
 let files: Record<string, Blob>;
+let rulesError: { code: string } | null;
 const rpc = vi.fn();
 
 function client() {
@@ -33,10 +34,11 @@ function client() {
   return {
     from(table: string) {
       const q: Record<string, unknown> = {};
-      for (const m of ["select", "eq", "order", "limit"]) q[m] = () => q;
+      for (const m of ["select", "eq", "order", "limit", "range"]) q[m] = () => q;
       q.maybeSingle = async () => ({ data: table === "claims" ? claim : rows[table], error: null });
       q.then = (resolve: (v: unknown) => unknown) =>
-        Promise.resolve({ data: [{ title: "What your receipt must show", body: "• the date", applies_to: "reimbursement" }], error: null }).then(resolve);
+        Promise.resolve(rulesError ? { data: null, error: rulesError }
+          : { data: [{ title: "What your receipt must show", body: "• the date", applies_to: "reimbursement" }], error: null }).then(resolve);
       return q;
     },
     storage: { from: () => ({ download: async (path: string) => (files[path] ? { data: files[path], error: null } : { data: null, error: { message: "nope" } }) }) },
@@ -53,6 +55,7 @@ const looksRight = {
 beforeEach(() => {
   claim = { ...claimRow };
   files = { [claimRow.attachment_paths[0]]: new Blob([new Uint8Array(4)], { type: "image/jpeg" }) };
+  rulesError = null;
   rpc.mockReset().mockResolvedValue({ error: null });
   vi.mocked(requireMember).mockResolvedValue({ id: LEAD, role: "lead" } as never);
   vi.mocked(createClient).mockResolvedValue(client() as never);
@@ -80,6 +83,32 @@ describe("checkReceipts", () => {
     await checkReceipts(ID);
     expect(runReceiptCheck).not.toHaveBeenCalled();
     expect(rpc.mock.calls[0][1]).toMatchObject({ p_verdict: "unreadable", p_files_checked: 0, p_model: "none" });
+  });
+
+  it("lists a file that can't be downloaded, and checks the rest", async () => {
+    claim = { ...claimRow, attachment_paths: [`${VOL}/x/aa11-gone.jpg`, claimRow.attachment_paths[0]] };
+    expect(await checkReceipts(ID)).toEqual({ ok: true });
+    const [blocks, text] = vi.mocked(runReceiptCheck).mock.calls[0];
+    expect(blocks[0]).toEqual({ type: "text", text: "File 1: receipt.jpg" });
+    expect(text).toContain("- gone.jpg: it couldn't be downloaded");
+    expect(rpc.mock.calls[0][1].p_findings.skipped).toEqual([{ name: "gone.jpg", reason: "it couldn't be downloaded" }]);
+    expect(console.error).toHaveBeenCalledWith("receipt check files not downloaded", { count: 1 });
+  });
+
+  it("doesn't check without the claim rules, and logs a code only", async () => {
+    rulesError = { code: "57014" };
+    expect(await checkReceipts(ID)).toEqual({ ok: false, error: "The receipts couldn't be checked just now. Try again." });
+    expect(runReceiptCheck).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith("receipt check failed", { step: "rules_read", code: undefined });
+  });
+
+  it("leaves a claim awaiting final approval to Finance", async () => {
+    claim = { ...claimRow, status: "pending_finance" };
+    expect(await checkReceipts(ID)).toEqual({ ok: false, error: "Only Finance checks a claim awaiting final approval." });
+    expect(runReceiptCheck).not.toHaveBeenCalled();
+    vi.mocked(requireMember).mockResolvedValue({ id: LEAD, role: "finance" } as never);
+    expect(await checkReceipts(ID)).toEqual({ ok: true });
   });
 
   it("does nothing when the server has no API key", async () => {

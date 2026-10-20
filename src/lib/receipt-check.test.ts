@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { describeClaim, mediaTypeOf, prepareFiles, ReceiptCheckError, runReceiptCheck, type CheckResult } from "./receipt-check";
+import { describeClaim, mediaTypeOf, prepareFiles, ReceiptCheckError, runReceiptCheck, savedCheck, StoredFindings, type CheckResult } from "./receipt-check";
 
 const file = (name: string, mediaType: string, bytes = 10) => ({ name, mediaType, data: new Uint8Array(bytes) });
 
@@ -122,5 +122,41 @@ describe("runReceiptCheck", () => {
   it("throws a coded error on an API failure, with its HTTP status", async () => {
     const failing = { messages: { parse: vi.fn(async () => { throw new Anthropic.APIError(529, undefined, "overloaded", new Headers()); }) } };
     await expect(runReceiptCheck([], "x", failing as unknown as Anthropic)).rejects.toEqual(new ReceiptCheckError("api_529"));
+  });
+});
+
+describe("savedCheck", () => {
+  const long = "x".repeat(5000);
+  const doc = { file: long, kind: "receipt" as const, merchant: long, date: long, total: long, reference: long, payment_method: long, items: long };
+
+  it("cuts a long answer down to what receipt_checks holds, keeping its shape", () => {
+    const result: CheckResult = {
+      verdict: "check_needed", summary: `  ${long}  `, documents: Array(9).fill(doc), document_kind: "receipt",
+      fields: Array(40).fill({ field: long, shown: "no", value: long }), amount_matches: "no", date_matches: "unclear",
+      missing: Array(40).fill(long), concerns: Array(40).fill(long),
+    };
+    const saved = savedCheck(result, Array(12).fill({ name: long, reason: long }));
+    expect(saved.verdict).toBe("check_needed");
+    expect(saved.summary).toHaveLength(1000);
+    expect(saved.findings.documents).toHaveLength(5);
+    expect(saved.findings.fields).toHaveLength(20);
+    expect(saved.findings.missing).toHaveLength(10);
+    expect(saved.findings.skipped).toHaveLength(10);
+    // Well under the 50,000 characters the table allows, even if every character needed escaping.
+    expect(JSON.stringify(saved.findings).length * 2).toBeLessThan(50_000);
+    expect(StoredFindings.safeParse(saved.findings).success).toBe(true);
+  });
+
+  it("gives an empty summary words, and records an unreadable claim with its files", () => {
+    expect(savedCheck({ ...{ verdict: "looks_right", documents: [], document_kind: "receipt", fields: [], amount_matches: "yes",
+      date_matches: "yes", missing: [], concerns: [] }, summary: "   " }, []).summary).toBe("No summary was given.");
+    expect(savedCheck(null, [{ name: "p.heic", reason: "HEIC photos can't be read" }])).toEqual({
+      verdict: "unreadable", summary: "None of the attached files could be read.",
+      findings: { documents: [], skipped: [{ name: "p.heic", reason: "HEIC photos can't be read" }] },
+    });
+  });
+
+  it("refuses findings that aren't a check's shape", () => {
+    expect(StoredFindings.safeParse({ fields: "x" }).success).toBe(false);
   });
 });

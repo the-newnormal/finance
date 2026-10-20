@@ -129,14 +129,13 @@ export interface ReceiptFindings {
   skipped?: { name: string; reason: string }[];
 }
 
-/** receipt_checks (0008): the AI receipt check of a claim, advice for its reviewers. */
+/** receipt_checks (0008): a reviewer's AI receipt check of a claim, advice for them alone. */
 export interface ReceiptCheck {
   verdict: ReceiptVerdict;
   summary: string;
   findings: ReceiptFindings;
   files_checked: number;
   model: string;
-  checked_by_name: string;
   checked_at: string;
 }
 
