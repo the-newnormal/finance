@@ -40,6 +40,10 @@ const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/h
 // `proof` marks a proof of payment for an invoice the claimant paid; all of them are attached.
 type Attachment = { file: File; path?: string; proof?: boolean };
 
+// The fields the AI check reads (with the kind, budget, category and files); editing another, such as
+// the payout details, doesn't call for a new check.
+const CHECKED_FIELDS = new Set(["budgetId", "categoryId", "description", "amount", "expenseDate", "vendorName"]);
+
 // What the claimant ticks to submit, in TRP's words: it agrees to the declaration above it.
 const AGREEMENT = "I agree that all relevant information is accurate and free of errors, and I understand the processing timeline and terms above.";
 
@@ -61,8 +65,9 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
-  // The last AI check: what it read (`key`) and what it found to fix. The same claim isn't checked
-  // twice, so submitting it again unchanged sends it as it is; `changed` only lets the button say so.
+  // The last AI check: what it read (`key`) and what it found to fix (none if it couldn't run). The same
+  // claim isn't checked twice, so submitting it again unchanged sends it as it is; `changed` (a field
+  // the check reads was edited since) only lets the button say so.
   const [check, setCheck] = useState<{ key: string; fixes: string[] } | null>(null);
   const [changed, setChanged] = useState(false);
   const fixes = check?.fixes.length ? check.fixes : null;
@@ -152,7 +157,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
       setChecking(true);
       const res = await precheckClaim(checked).catch(() => ({ ok: false as const }));
       setChecking(false);
-      setCheck(res.ok ? { key, fixes: res.fixes } : null);
+      setCheck({ key, fixes: res.ok ? res.fixes : [] });
       setChanged(false);
       if (res.ok && res.fixes.length) { setBusy(false); return; }
     }
@@ -193,7 +198,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   ];
 
   return (
-    <form onSubmit={onSubmit} onChange={() => setChanged(true)} className="grid gap-6 lg:grid-cols-[1fr_380px]">
+    <form onSubmit={onSubmit} onChange={(e) => { if (CHECKED_FIELDS.has((e.target as Element).getAttribute("name") ?? "")) setChanged(true); }} className="grid gap-6 lg:grid-cols-[1fr_380px]">
       <div className="grid content-start gap-6">
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">

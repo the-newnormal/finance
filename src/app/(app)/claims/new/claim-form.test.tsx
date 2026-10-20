@@ -71,6 +71,15 @@ async function fill() {
 
 const submitButton = () => el.querySelector<HTMLButtonElement>('button[type="submit"]')!;
 
+// Types into a field as a person would, so React sees the change.
+async function type(name: string, value: string) {
+  const input = el.querySelector<HTMLInputElement>(`[name="${name}"]`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 describe("ClaimForm", () => {
   it("shows the rules for the claim in its declaration, and must be agreed to", () => {
     const declaration = el.textContent!;
@@ -139,8 +148,25 @@ describe("ClaimForm", () => {
     expect(submitClaim).not.toHaveBeenCalled();
     expect(el.textContent).toContain("The receipt doesn't show: Payment Method.");
     expect(submitButton().textContent).toBe("Submit as it is");
+    // Payout details aren't read by the check, so editing them still sends the claim as it is.
+    await type("payeeName", "Tan Ah Kow Jr");
+    expect(submitButton().textContent).toBe("Submit as it is");
     await submit();
     expect(precheckClaim).toHaveBeenCalledTimes(1);
+    expect(submitClaim).toHaveBeenCalledTimes(1);
+  });
+
+  it("with the AI check on, checks again once something it reads has changed", async () => {
+    await render(true);
+    await fill();
+    vi.mocked(precheckClaim).mockResolvedValue({ ok: true, fixes: ["The total on the documents doesn't match the amount claimed."] });
+    await submit();
+    await type("amount", "43.00");
+    expect(submitButton().textContent).toBe("Submit claim");
+    vi.mocked(precheckClaim).mockResolvedValue({ ok: true, fixes: [] });
+    await submit();
+    expect(precheckClaim).toHaveBeenCalledTimes(2);
+    expect(precheckClaim).toHaveBeenLastCalledWith(expect.objectContaining({ amount: "43.00" }));
     expect(submitClaim).toHaveBeenCalledTimes(1);
   });
 
@@ -155,6 +181,10 @@ describe("ClaimForm", () => {
     await submit();
     expect(precheckClaim).toHaveBeenCalledTimes(2);
     expect(submitClaim).toHaveBeenCalledTimes(2);
+    // A retry of the same claim (say, after submitClaim refused it) isn't checked again, even after a check that failed.
+    await submit();
+    expect(precheckClaim).toHaveBeenCalledTimes(2);
+    expect(submitClaim).toHaveBeenCalledTimes(3);
   });
 
   it("clears the files when they change what they're attaching, but not on a repeat tap", async () => {

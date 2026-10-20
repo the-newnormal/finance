@@ -19,10 +19,10 @@ const input = {
   description: "Taxi", amount: "25.40", expenseDate: "2026-10-01", attachmentPaths: [`${VOL}/x/3f2a9c1e-receipt.jpg`],
 };
 let files: Record<string, Blob>;
+let rows: Record<string, unknown>;
 const download = vi.fn();
 
 function client() {
-  const rows: Record<string, unknown> = { budgets: { name: "Iftar" }, categories: { name: "Transport" } };
   return {
     from(table: string) {
       const q: Record<string, unknown> = {};
@@ -42,6 +42,7 @@ const flagged = {
 };
 
 beforeEach(() => {
+  rows = { budgets: { name: "Iftar", active: true }, categories: { name: "Transport", active: true } };
   files = { [input.attachmentPaths[0]]: new Blob([new Uint8Array(4)], { type: "image/jpeg" }) };
   download.mockReset().mockImplementation(async (path: string) =>
     files[path] ? { data: files[path], error: null } : { data: null, error: { message: "nope" } });
@@ -73,6 +74,30 @@ describe("precheckClaim", () => {
       ok: true, fixes: ["Couldn't read photo.heic: HEIC photos can't be read; a JPEG, PNG or PDF can."],
     });
     expect(runReceiptCheck).not.toHaveBeenCalled();
+  });
+
+  it("doesn't check a claim submitClaim would refuse, so the claimant hears why instead", async () => {
+    for (const bad of [
+      { description: "ab" }, { expenseDate: "2999-01-01" }, { expenseDate: "" }, { amount: "1000000.01" },
+      { kind: "invoice" as const, vendorName: "" },
+    ]) {
+      expect(await precheckClaim({ ...input, ...bad })).toEqual({ ok: false });
+    }
+    expect(download).not.toHaveBeenCalled();
+    expect(runReceiptCheck).not.toHaveBeenCalled();
+  });
+
+  it("doesn't check against a budget or category that's gone or no longer open", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    rows = { budgets: null, categories: { name: "Transport", active: true } };
+    expect(await precheckClaim(input)).toEqual({ ok: false });
+    rows = { budgets: { name: "Iftar", active: false }, categories: { name: "Transport", active: true } };
+    expect(await precheckClaim(input)).toEqual({ ok: false });
+    rows = { budgets: { name: "Iftar", active: true }, categories: { name: "Transport", active: false } };
+    expect(await precheckClaim(input)).toEqual({ ok: false });
+    expect(log).toHaveBeenCalledWith("receipt precheck failed", { step: "not_open", code: undefined });
+    expect(runReceiptCheck).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it("only reads files in the claimant's own folder", async () => {

@@ -20,14 +20,16 @@ export type ClaimCheck =
  * the claim rules, downloads the files and has Claude read them, all as the signed-in member, so RLS
  * decides what they can read. Saves nothing. Not run (`ok: false`) when anything it needs can't be
  * read, as a check without the rules would look complete when it isn't; a file that can't be
- * downloaded is listed with the ones that can't be read, and the rest are checked.
+ * downloaded is listed with the ones that can't be read, and the rest are checked. `newClaim`: a claim
+ * about to be made, so its budget and category must still be open for claims (a claim already made
+ * is checked whatever has closed since).
  */
-export async function checkClaimFiles(supabase: Supabase, claim: ClaimToCheck): Promise<ClaimCheck> {
+export async function checkClaimFiles(supabase: Supabase, claim: ClaimToCheck, opts: { newClaim?: boolean } = {}): Promise<ClaimCheck> {
   let budget, category, rules;
   try {
     [budget, category, rules] = await Promise.all([
-      supabase.from("budgets").select("name").eq("id", claim.budget_id).maybeSingle(),
-      supabase.from("categories").select("name").eq("id", claim.category_id).maybeSingle(),
+      supabase.from("budgets").select("name, active").eq("id", claim.budget_id).maybeSingle(),
+      supabase.from("categories").select("name, active").eq("id", claim.category_id).maybeSingle(),
       fetchAll<Pick<ClaimRule, "title" | "body" | "applies_to">>((from, to) =>
         supabase.from("claim_rules").select("title, body, applies_to").eq("active", true)
           .order("sort_order").order("created_at").order("id").range(from, to)),
@@ -36,6 +38,8 @@ export async function checkClaimFiles(supabase: Supabase, claim: ClaimToCheck): 
     return { ok: false, step: "rules_read" };
   }
   if (budget.error || category.error) return { ok: false, step: "claim_details_read", code: (budget.error ?? category.error)?.code };
+  if (!budget.data || !category.data) return { ok: false, step: "claim_details_missing" };
+  if (opts.newClaim && (!budget.data.active || !category.data.active)) return { ok: false, step: "not_open" };
 
   const downloads = await Promise.all(claim.attachment_paths.map(async (path): Promise<ReceiptFile | Skipped> => {
     const name = path.split("/").pop()?.replace(/^[0-9a-f]+-/i, "") ?? "file";
@@ -55,8 +59,8 @@ export async function checkClaimFiles(supabase: Supabase, claim: ClaimToCheck): 
       {
         kind: claim.kind, amount_cents: Number(claim.amount_cents), expense_date: claim.expense_date, vendor_name: claim.vendor_name,
         description: claim.description,
-        budgetName: (budget.data?.name as string | undefined) ?? "—",
-        categoryName: (category.data?.name as string | undefined) ?? "—",
+        budgetName: budget.data.name as string,
+        categoryName: category.data.name as string,
       },
       rules,
       skipped,
