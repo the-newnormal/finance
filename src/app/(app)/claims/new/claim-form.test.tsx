@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/client";
+import { submitClaim } from "../actions";
 import { ClaimForm } from "./claim-form";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -20,6 +21,7 @@ let root: Root;
 let el: HTMLDivElement;
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   el = document.createElement("div");
   document.body.append(el);
   root = createRoot(el);
@@ -71,6 +73,27 @@ describe("ClaimForm", () => {
     await submit();
     expect(el.textContent).toContain("Attach the proof of payment");
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("uploads the receipt to the member's folder and sends the claim with the agreement", async () => {
+    const upload = vi.fn(async () => ({ error: null }));
+    vi.mocked(createClient).mockReturnValue({ storage: { from: () => ({ upload }) } } as never);
+    vi.mocked(submitClaim).mockResolvedValue({ ok: true, id: "claim-1", payoutSaved: true });
+    await attach(fileInputs()[0], "receipt.jpg");
+    const set = (name: string, value: string) => { el.querySelector<HTMLInputElement>(`[name="${name}"]`)!.value = value; };
+    set("amount", "42.50");
+    set("expenseDate", "2026-10-01");
+    set("description", "Snacks for volunteers");
+    set("payeeName", "Tan Ah Kow");
+    set("proxy", "9123 4567");
+    el.querySelector<HTMLInputElement>('input[name="agreed"]')!.checked = true;
+    await submit();
+    const path = expect.stringMatching(/^u1\/[0-9a-f-]+\/[0-9a-f]{8}-receipt\.jpg$/);
+    expect(upload).toHaveBeenCalledWith(path, expect.any(File), { contentType: "image/jpeg", upsert: false });
+    expect(submitClaim).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "reimbursement", amount: "42.50", expenseDate: "2026-10-01", description: "Snacks for volunteers",
+      attachmentPaths: [path], payout: { type: "paynow_mobile", name: "Tan Ah Kow", proxy: "9123 4567" }, agreed: true,
+    }));
   });
 
   it("clears the files when they change what they're attaching, but not on a repeat tap", async () => {
