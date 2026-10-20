@@ -18,6 +18,7 @@ const ALLOWED = new Set([
   "src/app/(app)/people/actions.test.ts",
   "src/lib/notify.ts", // looks up the emails of a claimant and of their claim's reviewers, to notify them
   "src/lib/notify.test.ts",
+  "src/app/(app)/claims/[id]/check-actions.ts", // saves AI results through the server-only credential
 ]);
 
 const SOURCE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;

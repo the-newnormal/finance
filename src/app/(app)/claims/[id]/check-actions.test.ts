@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReceiptCheckError, receiptCheckEnabled, runReceiptCheck } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { checkReceipts } from "./check-actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createServiceRoleClient: vi.fn() }));
 // The real file handling and prompt; only the call to Claude (and the key check) is faked.
 vi.mock("@/lib/receipt-check", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/receipt-check")>()),
@@ -56,6 +58,7 @@ beforeEach(() => {
   rpc.mockReset().mockResolvedValue({ error: null });
   vi.mocked(requireMember).mockResolvedValue({ id: LEAD, role: "lead" } as never);
   vi.mocked(createClient).mockResolvedValue(client() as never);
+  vi.mocked(createServiceRoleClient).mockReturnValue(client() as never);
   vi.mocked(receiptCheckEnabled).mockReturnValue(true);
   vi.mocked(runReceiptCheck).mockReset().mockResolvedValue({ result: looksRight as never, model: "claude-haiku-5-5" });
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -70,7 +73,7 @@ describe("checkReceipts", () => {
     expect(text).toContain("- Amount claimed: $25.40");
     expect(text).toContain("## What your receipt must show");
     expect(rpc).toHaveBeenCalledWith("record_receipt_check", {
-      p_claim: ID, p_verdict: "looks_right", p_summary: "The receipt matches.", p_files_checked: 1, p_model: "claude-haiku-5-5",
+      p_claim: ID, p_checked_by: LEAD, p_verdict: "looks_right", p_summary: "The receipt matches.", p_files_checked: 1, p_model: "claude-haiku-5-5",
       p_findings: { documents: [], document_kind: "receipt", fields, amount_matches: "yes", date_matches: "yes", missing: [], concerns: [], skipped: [] },
     });
   });

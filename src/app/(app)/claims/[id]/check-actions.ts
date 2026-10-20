@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { describeClaim, mediaTypeOf, prepareFiles, ReceiptCheckError, receiptCheckEnabled, runReceiptCheck, type ReceiptFile } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
+import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { Claim, ClaimRule } from "@/lib/types";
 
@@ -77,8 +78,10 @@ export async function checkReceipts(id: string): Promise<CheckActionResult> {
     }
   }
 
-  const { error: saveError } = await supabase.rpc("record_receipt_check", {
-    p_claim: claim.id, p_verdict: verdict, p_summary: summary, p_findings: findings,
+  // The result-writing RPC is service-role only. This prevents a reviewer from forging advice by
+  // calling it directly; the checks above and in the RPC still bind the result to this reviewer.
+  const { error: saveError } = await createServiceRoleClient().rpc("record_receipt_check", {
+    p_claim: claim.id, p_checked_by: me.id, p_verdict: verdict, p_summary: summary, p_findings: findings,
     p_files_checked: prepared.checked.length, p_model: model,
   });
   if (saveError) {

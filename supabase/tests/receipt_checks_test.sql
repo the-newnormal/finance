@@ -17,8 +17,8 @@ create function pg_temp.submit(p_desc text) returns void language sql as $$
   values ('0d400000-0000-4000-8000-000000000001', '0d300000-0000-4000-8000-000000000001', p_desc, 2540,
           array[auth.uid()::text || '/x/r.jpg'], 'bank', 'DBS •••• 1', 'v1.a.b.c', gen_random_uuid())
 $$;
-create function pg_temp.record(p_desc text, p_summary text default 'The receipt matches.') returns void language sql as $$
-  select public.record_receipt_check(pg_temp.claim(p_desc), 'looks_right', p_summary, '{"documents": []}', 1, 'claude-haiku-5-5')
+create function pg_temp.record(p_desc text, p_summary text default 'The receipt matches.') returns void language sql security definer as $$
+  select public.record_receipt_check(pg_temp.claim(p_desc), auth.uid(), 'looks_right', p_summary, '{"documents": []}', 1, 'claude-haiku-5-5')
 $$;
 
 -- f: Finance; a: lead of division A; b: lead of division B; v: volunteer in A

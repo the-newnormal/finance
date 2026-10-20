@@ -33,15 +33,24 @@ create policy receipt_checks_select on public.receipt_checks for select to authe
   exists (select 1 from public.claims c where c.id = claim_id and private.in_purview(c.division_id))
 );
 
-create function public.record_receipt_check(p_claim uuid, p_verdict public.receipt_verdict, p_summary text,
-  p_findings jsonb, p_files_checked int, p_model text)
+-- This function is deliberately callable only by the server's service-role client. The reviewer
+-- identity is supplied by the server after it has authenticated the request; allowing authenticated
+-- users to execute it would let them forge the AI result by calling the RPC directly.
+create function public.record_receipt_check(p_claim uuid, p_checked_by uuid, p_verdict public.receipt_verdict,
+  p_summary text, p_findings jsonb, p_files_checked int, p_model text)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
-  v_me public.members := private.me();
+  v_me public.members;
   v_claim public.claims;
 begin
+  select * into v_me from public.members where id = p_checked_by;
   select * into v_claim from public.claims c where c.id = p_claim for share;
-  if v_me.id is null or v_claim.id is null or not private.in_purview(v_claim.division_id) then
+  if v_me.id is null or v_claim.id is null or not (
+    v_me.role = 'finance' or exists (
+      select 1 from public.division_leads dl
+      where dl.member_id = v_me.id and dl.division_id = v_claim.division_id
+    )
+  ) then
     raise exception 'Claim not found.' using errcode = 'P0002';
   end if;
   if v_claim.claimant_id = v_me.id and v_me.role <> 'finance' then
@@ -57,5 +66,5 @@ begin
     checked_by = excluded.checked_by, checked_by_name = excluded.checked_by_name, checked_at = now();
 end $$;
 
-revoke all on function public.record_receipt_check(uuid, public.receipt_verdict, text, jsonb, int, text) from public, anon;
-grant execute on function public.record_receipt_check(uuid, public.receipt_verdict, text, jsonb, int, text) to authenticated;
+revoke all on function public.record_receipt_check(uuid, uuid, public.receipt_verdict, text, jsonb, int, text) from public, anon, authenticated;
+grant execute on function public.record_receipt_check(uuid, uuid, public.receipt_verdict, text, jsonb, int, text) to service_role; 

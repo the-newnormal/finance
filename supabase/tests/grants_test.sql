@@ -86,8 +86,9 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.mark_paid(uuid, text, uuid)',
                   'public.import_paid_claims(jsonb)',
                   'public.attach_claim_files(uuid, text[])',
-                  'public.add_to_reserve(bigint, date, text)',
-                  'public.record_receipt_check(uuid, public.receipt_verdict, text, jsonb, integer, text)']) f;
+                  'public.add_to_reserve(bigint, date, text)']) f;
+select ok(has_function_privilege('service_role', 'public.record_receipt_check(uuid, uuid, public.receipt_verdict, text, jsonb, integer, text)', 'execute'),
+  'service_role: execute on record_receipt_check');
 
 -- The private helpers are unreachable for anon, and the trigger functions for everyone.
 select ok(not has_function_privilege('anon', p.oid, 'execute'), format('anon: no execute on %s', p.oid::regprocedure))
