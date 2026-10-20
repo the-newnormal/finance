@@ -4,12 +4,20 @@ import { fetchAll } from "@/lib/fetch-all";
 import { createClient } from "@/lib/supabase/server";
 import type { Claim } from "@/lib/types";
 
-export const ROW_COLUMNS = "id, kind, status, claimant_name, description, amount_cents, vendor_name, created_at, budget_id, category_id";
+export const ROW_COLUMNS = "id, kind, status, claimant_name, description, amount_cents, vendor_name, created_at, budget_id, category_id, division_id";
 
-type Raw = Pick<Claim, "id" | "kind" | "status" | "claimant_name" | "description" | "amount_cents" | "vendor_name" | "created_at" | "budget_id" | "category_id">;
+type Raw = Pick<Claim, "id" | "kind" | "status" | "claimant_name" | "description" | "amount_cents" | "vendor_name" | "created_at" | "budget_id" | "category_id" | "division_id">;
 
-/** Adds budget and category names to claim rows, for ClaimsTable. */
 export { fetchAll };
+
+/**
+ * What to call a claim's budget when the viewer can't read it. Only Finance reads the reserve (0006),
+ * but Finance can import a reimbursement from it for anyone, so its claimant sees it as "Reserve".
+ * A claim with no division is always the reserve's.
+ */
+export function hiddenBudgetName(divisionId: string | null) {
+  return divisionId === null ? "Reserve" : "—";
+}
 
 /** Adds budget and category names to claim rows, for ClaimsTable. Every name is read; a failure throws. */
 export async function withNames(rows: Raw[]): Promise<ClaimRow[]> {
@@ -29,5 +37,5 @@ export async function withNames(rows: Raw[]): Promise<ClaimRow[]> {
     names("budgets", [...new Set(rows.map((r) => r.budget_id))]),
     names("categories", [...new Set(rows.map((r) => r.category_id))]),
   ]);
-  return rows.map((r) => ({ ...r, budgetName: budget.get(r.budget_id) ?? "—", categoryName: cat.get(r.category_id) ?? "—" }));
+  return rows.map((r) => ({ ...r, budgetName: budget.get(r.budget_id) ?? hiddenBudgetName(r.division_id), categoryName: cat.get(r.category_id) ?? "—" }));
 }

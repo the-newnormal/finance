@@ -20,9 +20,11 @@ insert into public.categories (name) values
 
 insert into public.budgets (id, name, kind, division_id)
 values ('20000000-0000-4000-8000-00000000e001', 'Community Iftar 2026', 'event', '10000000-0000-4000-8000-00000000d001');
--- Provision three categories, each with a guideline.
+-- Provision three categories, each with a guideline. (The reserve provisions every category itself,
+-- and has no guidelines.)
 insert into public.budget_categories (budget_id, category_id)
 select '20000000-0000-4000-8000-00000000e001', id from public.categories
 where name in ('Venue costs', 'Food & beverages', 'Transport');
 insert into public.budget_guidelines (budget_id, category_id, guideline_cents)
-select budget_id, category_id, 50000 from public.budget_categories;
+select budget_id, category_id, 50000 from public.budget_categories
+where budget_id = '20000000-0000-4000-8000-00000000e001';

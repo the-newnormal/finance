@@ -40,7 +40,8 @@ export interface BudgetTotals {
   budget_id: string;
   name: string;
   kind: BudgetKind;
-  division_id: string;
+  /** null only for the reserve (0006). */
+  division_id: string | null;
   active: boolean;
   guideline_cents: number;
   pending_cents: number;

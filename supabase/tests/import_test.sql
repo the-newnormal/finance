@@ -152,5 +152,15 @@ select pg_temp.login('0a100000-0000-4000-8000-000000000001');
 select throws_ok($$ select public.attach_claim_files(pg_temp.claim('I ordinary'), array['0a100000-0000-4000-8000-000000000001/x/r.pdf']) $$,
   'P0001', 'Only imported claims can have files added later.', 'only imported claims take files later');
 
+-- The reserve (0006): Finance can import a paid claim against it for anyone. That is how someone
+-- outside Finance is reimbursed from it, since they can't submit a claim against it themselves.
+select is(public.import_paid_claims(jsonb_build_array(pg_temp.row('i-vol@test.local', 'I vol reserve', '2026-02-01', 'Reserve'))), 1,
+  'Finance imports a volunteer''s reimbursement from the reserve');
+select results_eq($$ select status::text, division_id from public.claims where description = 'I vol reserve' $$,
+  $$ values ('paid', null::uuid) $$, 'it is paid and belongs to no division');
+select pg_temp.login('0a100000-0000-4000-8000-000000000003');
+select isnt_empty($$ select 1 from public.claims where description = 'I vol reserve' $$, 'the volunteer sees their claim');
+select is_empty($$ select 1 from public.budgets where is_reserve $$, 'but still not the reserve itself');
+
 select * from finish();
 rollback;

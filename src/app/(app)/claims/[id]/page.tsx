@@ -5,6 +5,7 @@ import { Alert } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import QRCode from "qrcode";
+import { hiddenBudgetName } from "@/lib/claims";
 import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
 import { buildPayNowPayload } from "@/lib/paynow";
@@ -81,7 +82,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
             </CardHeader>
             <CardContent>
               <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
-                <Item label="Budget">{budget.data?.name ?? "—"}</Item>
+                <Item label="Budget">{budget.data?.name ?? hiddenBudgetName(claim.division_id)}</Item>
                 <Item label="Category">{category.data?.name ?? "—"}</Item>
                 <Item label="Submitted by">{claim.claimant_name}</Item>
                 <Item label="Submitted">{formatDate(claim.created_at)}</Item>
@@ -105,7 +106,8 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
             <CardContent className="grid gap-3 sm:grid-cols-2">
               {!claim.attachment_paths.length && <p className="text-sm text-ink-soft sm:col-span-2">No files yet.</p>}
               {(files.data ?? []).map((f) => {
-                const name = (f.path ?? "").split("/").pop()?.replace(/^\d+-/, "") ?? "file";
+                // Uploads are named <hex or digits>-<file>: show just the file.
+                const name = (f.path ?? "").split("/").pop()?.replace(/^[0-9a-f]+-/i, "") ?? "file";
                 return f.signedUrl ? (
                   <a key={f.path} href={f.signedUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-line p-3 text-sm hover:bg-canvas">
                     <span className="grid size-10 place-items-center rounded-lg bg-canvas"><FileText className="size-5 text-ink-soft" /></span>
