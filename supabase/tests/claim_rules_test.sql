@@ -21,9 +21,10 @@ insert into public.claim_rules (id, title, body, active) values
   ('0c200000-0000-4000-8000-000000000001', 'CR shown', 'Shown to everyone.', true),
   ('0c200000-0000-4000-8000-000000000002', 'CR hidden', 'Finance only.', false);
 
--- The migration starts with TRP's notices.
-select ok((select count(*) from public.claim_rules where title in ('Accuracy and processing time', 'Personal data')) = 2,
-  'the starting rules are there');
+-- The migration starts with TRP's notices: the declaration for each kind of claim, and the PDPA notice for both.
+select results_eq($$ select applies_to::text from public.claim_rules
+    where title in ('Accuracy and processing time', 'Personal data') order by applies_to::text $$,
+  $$ values ('all'), ('invoice'), ('reimbursement') $$, 'the starting rules are there');
 
 -- ---------- volunteers read shown rules, and change nothing ----------
 select pg_temp.login('0c100000-0000-4000-8000-000000000002');

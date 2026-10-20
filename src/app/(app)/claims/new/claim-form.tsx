@@ -143,6 +143,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
         attachmentPaths,
         payout,
         savePayout: fd.get("savePayout") === "on",
+        agreed: fd.get("agreed") === "on",
         submissionId,
       });
       if (!res.ok) { setError(res.error); setBusy(false); return; }

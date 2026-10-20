@@ -45,6 +45,8 @@ select ok(has_table_privilege('authenticated', 'public.division_leads', 'delete'
 select ok(not has_table_privilege('authenticated', 'public.division_leads', 'update'), 'division_leads: not updated');
 select ok(has_table_privilege('authenticated', 'public.member_payouts', 'delete'), 'member_payouts: the owner can forget them');
 select ok(not has_table_privilege('authenticated', 'public.budget_categories', 'update'), 'budget_categories: not updated');
+select ok(has_table_privilege('authenticated', 'public.claim_rules', p), format('claim_rules: %s (Finance only, by RLS)', p))
+from unnest(array['select', 'insert', 'update', 'delete']) p;
 select ok(has_table_privilege('authenticated', v, 'select') and not has_table_privilege('authenticated', v, 'insert'),
   format('%s: read-only', v))
 from unnest(array['public.guideline_totals', 'public.budget_totals', 'public.bank_balances']) v;

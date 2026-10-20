@@ -38,6 +38,8 @@ const claimInput = z.object({
   attachmentPaths: z.array(z.string().max(300)).min(1, "Attach at least one receipt or invoice").max(5),
   payout,
   savePayout: z.boolean().optional(),
+  /** The claimant ticked the box agreeing to the form's declaration. */
+  agreed: z.boolean(),
   /** Made once per claim by the form; a retry with the same id returns the claim already made. */
   submissionId: z.uuid(),
 });
@@ -66,11 +68,13 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
   const parsed = claimInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const v = parsed.data;
+  if (!v.agreed) return { ok: false, error: "Tick the box to agree to the declaration." };
 
   const amount_cents = parseAmountToCents(v.amount);
   if (!amount_cents) return { ok: false, error: "Enter a valid amount, e.g. 42.50." };
   if (amount_cents > MAX_CLAIM_CENTS) return { ok: false, error: "A single claim can be at most $1,000,000." };
   if (v.kind === "invoice" && !v.vendorName) return { ok: false, error: "Enter the vendor's name." };
+  if (v.kind === "reimbursement" && !v.expenseDate) return { ok: false, error: "Enter the date of purchase." };
   if (v.kind === "reimbursement" && v.expenseDate && v.expenseDate > singaporeToday()) {
     return { ok: false, error: "The purchase date can't be in the future." };
   }

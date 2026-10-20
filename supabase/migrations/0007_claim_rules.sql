@@ -34,10 +34,14 @@ create policy claim_rules_select on public.claim_rules for select to authenticat
 create policy claim_rules_finance on public.claim_rules for all to authenticated
   using (private.is_finance()) with check (private.is_finance());
 
+-- TRP's declaration is for reimbursements; vendor invoices get the same words for an invoice.
 insert into public.claim_rules (title, body, applies_to, sort_order) values
   ('Accuracy and processing time',
    'By submitting this form, I agree that all relevant information is accurate and free of errors, and that my reimbursement claim may be rejected due to insufficient / inaccurate documents and/or may take up to 15 working days to be processed from form submission.',
-   'all', 10),
+   'reimbursement', 10),
+  ('Accuracy and processing time',
+   'By submitting this form, I agree that all relevant information is accurate and free of errors, and that my invoice may be rejected due to insufficient / inaccurate documents and/or may take up to 15 working days to be processed from form submission.',
+   'invoice', 10),
   ('Personal data',
    'By submitting this form, I understand that my personal data will be handled in accordance with the PDPA Act 2012 of Singapore.',
    'all', 20);
