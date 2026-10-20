@@ -78,11 +78,13 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
     setFiles(next);
   }
 
-  // Proofs of payment go with the choice that asks for them: a receipt or vendor invoice drops them.
+  // Changing what is attached starts the files afresh, as TRP's form does: a file attached as one
+  // kind of document is never sent as another (an invoice as the receipt, say).
   function choose(nextKind: typeof kind, nextPaidWith: typeof paidWith) {
+    const next: DocumentKind = nextKind === "invoice" ? "vendor_invoice" : nextPaidWith;
     setKind(nextKind);
     setPaidWith(nextPaidWith);
-    if (nextKind === "invoice" || nextPaidWith === "receipt") setFiles(files.filter((a) => !a.proof));
+    if (next !== documentKind) setFiles([]);
   }
 
   // Files can't change while a submission is uploading them (the controls are disabled), so what

@@ -73,12 +73,14 @@ describe("ClaimForm", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it("drops the proof of payment when they switch to a receipt", async () => {
+  it("clears the files when they change what they're attaching, but not on a repeat tap", async () => {
     await act(async () => radio("Invoice I've paid").click());
+    await attach(fileInputs()[0], "invoice.jpg");
     await attach(fileInputs()[1], "paynow.jpg");
-    expect(el.textContent).toContain("paynow.jpg");
-    await act(async () => radio("Receipt").click());
     await act(async () => radio("Invoice I've paid").click());
+    expect(el.textContent).toContain("invoice.jpg");
+    await act(async () => radio("Receipt").click());
+    expect(el.textContent).not.toContain("invoice.jpg");
     expect(el.textContent).not.toContain("paynow.jpg");
   });
 });
