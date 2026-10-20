@@ -73,6 +73,13 @@ select throws_ok($$ select public.save_budget(pg_temp.reserve(), 'Reserve', 'gen
 select throws_ok($$ update public.budgets set active = false where is_reserve $$, 'P0001', 'The reserve is always open.',
   'and can''t be closed');
 
+select results_eq($$ with d as (delete from public.budget_categories where budget_id = pg_temp.reserve()
+    and category_id = '0b300000-0000-4000-8000-000000000001' returning 1) select count(*) from d $$,
+  $$ values (0::bigint) $$, 'Finance can''t remove a category from the reserve');
+select throws_ok($$ insert into public.budget_guidelines (budget_id, category_id, guideline_cents)
+  values (pg_temp.reserve(), '0b300000-0000-4000-8000-000000000001', 100) $$,
+  '42501', null, 'nor give the reserve a guideline');
+
 -- A lead never sees the reserve's claims.
 select pg_temp.login('0b100000-0000-4000-8000-000000000002');
 select is_empty($$ select id from public.claims where description = 'R fin claim' $$, 'leads don''t see reserve claims');

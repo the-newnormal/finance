@@ -197,3 +197,21 @@ left join (
   from public.claims group by budget_id
 ) c on c.budget_id = b.id
 where private.in_purview(b.division_id);
+
+-- The reserve's provisions are kept by the triggers above and its guidelines don't exist, so Finance's
+-- direct writes to both tables apply to ordinary budgets only.
+create function private.is_reserve(p_budget uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.budgets b where b.id = p_budget and b.is_reserve)
+$$;
+revoke all on function private.is_reserve(uuid) from public;
+grant execute on function private.is_reserve(uuid) to authenticated;
+
+drop policy budget_categories_finance on public.budget_categories;
+create policy budget_categories_finance on public.budget_categories for all to authenticated
+  using (private.is_finance() and not private.is_reserve(budget_id))
+  with check (private.is_finance() and not private.is_reserve(budget_id));
+drop policy budget_guidelines_finance on public.budget_guidelines;
+create policy budget_guidelines_finance on public.budget_guidelines for all to authenticated
+  using (private.is_finance() and not private.is_reserve(budget_id))
+  with check (private.is_finance() and not private.is_reserve(budget_id));
