@@ -5,6 +5,7 @@ import { Alert } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import QRCode from "qrcode";
+import { hiddenBudgetName } from "@/lib/claims";
 import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
 import { buildPayNowPayload } from "@/lib/paynow";
@@ -81,7 +82,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
             </CardHeader>
             <CardContent>
               <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
-                <Item label="Budget">{budget.data?.name ?? "—"}</Item>
+                <Item label="Budget">{budget.data?.name ?? hiddenBudgetName(claim.division_id)}</Item>
                 <Item label="Category">{category.data?.name ?? "—"}</Item>
                 <Item label="Submitted by">{claim.claimant_name}</Item>
                 <Item label="Submitted">{formatDate(claim.created_at)}</Item>
