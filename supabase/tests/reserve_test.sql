@@ -33,7 +33,7 @@ insert into storage.objects (bucket_id, name) values
   ('receipts', '0b100000-0000-4000-8000-000000000003/r/r.pdf');
 
 select is((select count(*) from public.budgets where is_reserve), 1::bigint, 'there is exactly one reserve');
-select is((select division_id from public.budgets where is_reserve), null, 'it belongs to no division');
+select ok((select division_id from public.budgets where is_reserve) is null, 'it belongs to no division');
 select ok(exists (select 1 from public.budget_categories where budget_id = pg_temp.reserve()
                   and category_id = '0b300000-0000-4000-8000-000000000001'),
   'a new category is provisioned on the reserve automatically');
