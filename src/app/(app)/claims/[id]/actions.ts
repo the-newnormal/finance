@@ -76,18 +76,21 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
     }
   } else if (data.status === "rejected") {
     // The reason matters more than the wording, so this one is sent even if the claim can't be read.
-    const claim = await kindOf(supabase, id);
-    const thing = claim?.kind === "invoice" ? "invoice" : "claim";
-    after(() => emailClaimant(data.claimant_id, {
-      subject: `Your ${thing} for ${amount} needs attention`,
-      badge: { label: "Not approved", tone: "warning" },
-      heading: `Your ${thing} wasn't approved`,
-      paragraphs: [hi, "It couldn't be approved as it is, for the reason below."],
-      details: claimDetails({ description: claim?.description, vendor: claim?.kind === "invoice" ? claim.vendor_name : null, amount, budget: data.budget_name }),
-      callout: { label: "Reason", text: reason?.trim() ?? "" },
-      closing: `You're welcome to submit a new ${thing} with the corrections.`,
-      link: { ...link, label: `View ${thing}` },
-    }));
+    // Reading it waits for after the response too, so the reviewer isn't kept waiting for it.
+    after(async () => {
+      const claim = await kindOf(supabase, id);
+      const thing = claim?.kind === "invoice" ? "invoice" : "claim";
+      await emailClaimant(data.claimant_id, {
+        subject: `Your ${thing} for ${amount} needs attention`,
+        badge: { label: "Not approved", tone: "warning" },
+        heading: `Your ${thing} wasn't approved`,
+        paragraphs: [hi, "It couldn't be approved as it is, for the reason below."],
+        details: claimDetails({ description: claim?.description, vendor: claim?.kind === "invoice" ? claim.vendor_name : null, amount, budget: data.budget_name }),
+        callout: { label: "Reason", text: reason?.trim() ?? "" },
+        closing: `You're welcome to submit a new ${thing} with the corrections.`,
+        link: { ...link, label: `View ${thing}` },
+      });
+    });
   } else if (data.status === "pending_finance") {
     // Reviewed: tell Finance it's waiting for final approval, except whoever just reviewed it.
     after(() => emailReviewers(id, "pending_finance", me.id));

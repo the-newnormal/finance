@@ -7,8 +7,11 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireMember: vi.fn(async () => ({ id: "me" })) }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/notify", () => ({ emailClaimant: vi.fn(), emailReviewers: vi.fn() }));
-// after() schedules work for once the response is sent; here, run it straight away.
-vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
+// after() schedules work for once the response is sent; here, run it straight away, and let a test
+// wait for it with settled().
+const scheduled = vi.hoisted(() => [] as unknown[]);
+vi.mock("next/server", () => ({ after: (fn: () => unknown) => void scheduled.push(fn()) }));
+const settled = () => Promise.all(scheduled.splice(0));
 
 const ID = "40000000-0000-4000-8000-000000000001";
 const ACCOUNT = "50000000-0000-4000-8000-000000000001";
@@ -83,6 +86,7 @@ describe("decideClaim", () => {
   it("emails the reason on rejection", async () => {
     returns({ data: { ...outcome, status: "rejected" } });
     await decideClaim(ID, false, " Blurry receipt ");
+    await settled();
     expect(sent()).toMatchObject({ subject: "Your claim for $25.00 needs attention", callout: { label: "Reason", text: "Blurry receipt" } });
   });
 
@@ -90,13 +94,22 @@ describe("decideClaim", () => {
     returns({ data: { ...outcome, status: "rejected" } });
     claimRow.mockResolvedValue({ data: null, error: { code: "XX000" } });
     await decideClaim(ID, false, "Blurry receipt");
+    await settled();
     expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" }, details: [["Amount", "$25.00"], ["Budget", "Iftar"]] });
+  });
+
+  it("doesn't keep the reviewer waiting on the read behind a rejection's email", async () => {
+    returns({ data: { ...outcome, status: "rejected" } });
+    claimRow.mockReturnValue(new Promise(() => {})); // a read that never comes back
+    expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
+    scheduled.splice(0);
   });
 
   it("calls a rejected invoice an invoice", async () => {
     returns({ data: { ...outcome, status: "rejected" } });
     claimRow.mockResolvedValue(invoice);
     await decideClaim(ID, false, "Wrong vendor");
+    await settled();
     expect(sent()).toMatchObject({ subject: "Your invoice for $25.00 needs attention", heading: "Your invoice wasn't approved" });
   });
 
