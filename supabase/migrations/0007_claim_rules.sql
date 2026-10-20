@@ -5,9 +5,10 @@
 -- to vendor invoices only. The text is plain: shown as written, line breaks kept, never as HTML. An
 -- optional link (https only) goes under it.
 --
--- They start as the notices TRP's finance system shows its claimants: the declaration and the
--- data-protection notice. TRP's contact person and policy link are left out; Finance adds New
--- Normal's own. What each document must show is listed separately (src/lib/receipt-fields.ts).
+-- The claim form shows them in its declaration, above the box the claimant ticks to agree. They
+-- start as TRP's declaration and data-protection notice, word for word, without TRP's contact
+-- person and policy link: Finance adds New Normal's own. What each document must show is listed
+-- separately (src/lib/receipt-fields.ts).
 
 create type public.claim_rule_scope as enum ('all', 'reimbursement', 'invoice');
 
@@ -34,9 +35,9 @@ create policy claim_rules_finance on public.claim_rules for all to authenticated
   using (private.is_finance()) with check (private.is_finance());
 
 insert into public.claim_rules (title, body, applies_to, sort_order) values
-  ('Before you submit',
-   'By submitting, you confirm that everything in your claim is accurate and complete. A claim with missing or unclear documents may be rejected, and a claim can take up to 15 working days to process from when you submit it.',
-   'all', 30),
-  ('Your personal data',
-   'Your personal data is handled in accordance with Singapore''s Personal Data Protection Act 2012.',
-   'all', 40);
+  ('Accuracy and processing time',
+   'By submitting this form, I agree that all relevant information is accurate and free of errors, and that my reimbursement claim may be rejected due to insufficient / inaccurate documents and/or may take up to 15 working days to be processed from form submission.',
+   'all', 10),
+  ('Personal data',
+   'By submitting this form, I understand that my personal data will be handled in accordance with the PDPA Act 2012 of Singapore.',
+   'all', 20);

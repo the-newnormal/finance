@@ -24,13 +24,17 @@ export default async function NewClaimPage() {
     fetchAll<Pick<Category, "id" | "name">>((from, to) =>
       supabase.from("categories").select("id, name").eq("active", true).order("id").range(from, to)),
     supabase.from("member_payouts").select("payout_type, payout_masked").eq("member_id", me.id).maybeSingle(),
-    // The rules Finance shows (RLS: shown ones only, except to Finance, so filter here too).
-    supabase.from("claim_rules").select("id, title, body, applies_to, link_label, link_url")
-      .eq("active", true).order("sort_order").order("created_at").order("id").limit(100),
+    // The rules Finance shows (RLS: shown ones only, except to Finance, so filter here too). They're
+    // guidance: if they can't be read, the form still works without them.
+    fetchAll<ClaimRuleView>((from, to) =>
+      supabase.from("claim_rules").select("id, title, body, applies_to, link_label, link_url")
+        .eq("active", true).order("sort_order").order("created_at").order("id").range(from, to))
+      .catch((e: unknown) => {
+        console.error("claim rules read failed", { error: e instanceof Error ? e.message : "unknown" });
+        return [];
+      }),
   ]);
   if (saved.error) throw new Error(`new claim read failed: ${saved.error.code}`);
-  // Rules are guidance: if they can't be read, the form still works without them.
-  if (rules.error) console.error("claim rules read failed", { code: rules.error.code });
   openBudgets.sort((a, b) => a.name.localeCompare(b.name));
   categoryRows.sort((a, b) => a.name.localeCompare(b.name));
   const open = new Set(openBudgets.map((b) => b.id));
@@ -48,7 +52,7 @@ export default async function NewClaimPage() {
         provisions={provisionRows}
         categories={categoryRows}
         savedPayout={saved.data ? { type: saved.data.payout_type as PayoutType, masked: saved.data.payout_masked as string } : null}
-        rules={(rules.data ?? []) as ClaimRuleView[]}
+        rules={rules}
       />
     </>
   );

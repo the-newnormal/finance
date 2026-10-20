@@ -22,7 +22,7 @@ insert into public.claim_rules (id, title, body, active) values
   ('0c200000-0000-4000-8000-000000000002', 'CR hidden', 'Finance only.', false);
 
 -- The migration starts with TRP's notices.
-select ok((select count(*) from public.claim_rules where title in ('Before you submit', 'Your personal data')) = 2,
+select ok((select count(*) from public.claim_rules where title in ('Accuracy and processing time', 'Personal data')) = 2,
   'the starting rules are there');
 
 -- ---------- volunteers read shown rules, and change nothing ----------

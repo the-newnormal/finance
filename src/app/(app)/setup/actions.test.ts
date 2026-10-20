@@ -84,7 +84,7 @@ describe("claim rules", () => {
     title: " What your receipt must show ", body: "Attach a receipt.", appliesTo: "reimbursement" as const,
     linkLabel: "", linkUrl: "", sortOrder: 10, active: true,
   };
-  // claim_rules: insert(row), update(row).eq(id).select(), delete().eq(id), update(patch).eq(id).
+  // claim_rules: insert(row), update(row).eq(id).select(), delete().eq(id).select(), update(patch).eq(id).select().
   let result: { data?: unknown; error: unknown };
   const q: Record<string, ReturnType<typeof vi.fn>> = {};
   beforeEach(() => {
@@ -134,5 +134,11 @@ describe("claim rules", () => {
     expect(await deleteClaimRule(RULE)).toEqual({ ok: true });
     expect(q.delete).toHaveBeenCalled();
     expect(await deleteClaimRule("nope")).toEqual({ ok: false, error: "That rule wasn't found." });
+  });
+
+  it("says when the rule to hide, show or delete is already gone", async () => {
+    result = { data: [], error: null };
+    expect(await setClaimRuleActive(RULE, true)).toEqual({ ok: false, error: "That rule wasn't found." });
+    expect(await deleteClaimRule(RULE)).toEqual({ ok: false, error: "That rule wasn't found." });
   });
 });

@@ -229,7 +229,7 @@ function RulesCard({ rules }: { rules: ClaimRule[] }) {
     <Card>
       <CardHeader><CardTitle>Claim rules</CardTitle></CardHeader>
       <CardContent className="grid gap-3">
-        <p className="text-sm text-ink-soft">Shown on the claim form, in this order. Each one is for every claim, reimbursements only or vendor invoices only.</p>
+        <p className="text-sm text-ink-soft">Shown in the claim form&apos;s declaration, in this order, above the box claimants tick to agree to them. Each one is for every claim, reimbursements only or vendor invoices only.</p>
         {error && <Alert>{error}</Alert>}
         {rules.map((r) =>
           editing !== "new" && editing?.id === r.id ? (

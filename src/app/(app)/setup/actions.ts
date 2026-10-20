@@ -103,6 +103,12 @@ function ruleDone(error: { code?: string; message?: string } | null): Result {
   return res;
 }
 
+// An update or delete that matched no row isn't an error: the rule is gone (another Finance member).
+function ruleChanged({ data, error }: { data: unknown[] | null; error: { code?: string; message?: string } | null }): Result {
+  if (!error && !data?.length) return { ok: false, error: "That rule wasn't found." };
+  return ruleDone(error);
+}
+
 export async function saveClaimRule(id: string | null, input: ClaimRuleInput): Promise<Result> {
   await requireFinance();
   if (id !== null && !z.uuid().safeParse(id).success) return { ok: false, error: "That rule wasn't found." };
@@ -117,21 +123,19 @@ export async function saveClaimRule(id: string | null, input: ClaimRuleInput): P
   };
   const supabase = await createClient();
   if (id === null) return ruleDone((await supabase.from("claim_rules").insert(row)).error);
-  const { data, error } = await supabase.from("claim_rules").update(row).eq("id", id).select("id");
-  if (!error && !data?.length) return { ok: false, error: "That rule wasn't found." };
-  return ruleDone(error);
+  return ruleChanged(await supabase.from("claim_rules").update(row).eq("id", id).select("id"));
 }
 
 export async function setClaimRuleActive(id: string, active: boolean): Promise<Result> {
   await requireFinance();
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "That rule wasn't found." };
   const supabase = await createClient();
-  return ruleDone((await supabase.from("claim_rules").update({ active }).eq("id", id)).error);
+  return ruleChanged(await supabase.from("claim_rules").update({ active }).eq("id", id).select("id"));
 }
 
 export async function deleteClaimRule(id: string): Promise<Result> {
   await requireFinance();
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "That rule wasn't found." };
   const supabase = await createClient();
-  return ruleDone((await supabase.from("claim_rules").delete().eq("id", id)).error);
+  return ruleChanged(await supabase.from("claim_rules").delete().eq("id", id).select("id"));
 }
