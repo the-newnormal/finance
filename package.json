@@ -12,6 +12,7 @@
     "gen-key": "node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.118.0",
     "class-variance-authority": "^0.7.1",

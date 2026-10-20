@@ -20,15 +20,19 @@ const rules = [
 let root: Root;
 let el: HTMLDivElement;
 
+async function render(aiCheck: boolean) {
+  await act(async () => root.render(
+    <ClaimForm uid="u1" today="2026-10-20" canInvoice={false} goesStraightToFinance={false} budgets={[]} provisions={[]}
+      categories={[]} savedPayout={null} rules={rules} aiCheck={aiCheck} />,
+  ));
+}
+
 beforeEach(async () => {
   vi.clearAllMocks();
   el = document.createElement("div");
   document.body.append(el);
   root = createRoot(el);
-  await act(async () => root.render(
-    <ClaimForm uid="u1" today="2026-10-20" canInvoice={false} goesStraightToFinance={false} budgets={[]} provisions={[]}
-      categories={[]} savedPayout={null} rules={rules} />,
-  ));
+  await render(false);
 });
 
 afterEach(() => {
@@ -65,6 +69,14 @@ describe("ClaimForm", () => {
     expect(fileInputs().map((i) => i.getAttribute("aria-label"))).toEqual(["Add invoice(s)", "Add proof(s) of payment"]);
     expect(el.textContent).toContain("Proof(s) of payment");
     expect(el.textContent).toContain("Proof Of Payment — Payee");
+  });
+
+  it("says the AI will verify the mandatory fields, and which files it reads, only when the check is on", async () => {
+    expect(el.textContent).toContain("Receipt — must show these mandatory fields:");
+    expect(el.textContent).not.toContain("Anthropic");
+    await render(true);
+    expect(el.textContent).toContain("Receipt — AI will verify these mandatory fields:");
+    expect(el.textContent).toContain("JPG, PNG or PDF work best");
   });
 
   it("won't send an invoice they paid without its proof of payment", async () => {

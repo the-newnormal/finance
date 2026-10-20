@@ -9,12 +9,18 @@ import { hiddenBudgetName } from "@/lib/claims";
 import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
 import { buildPayNowPayload } from "@/lib/paynow";
+import { receiptCheckEnabled, StoredFindings } from "@/lib/receipt-check";
 import { requireMember } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import { CLAIM_COLUMNS, isFinance, PAYOUT_LABEL, type Claim, type ClaimEvent, type Member } from "@/lib/types";
+import { CLAIM_COLUMNS, isFinance, PAYOUT_LABEL, type Claim, type ClaimEvent, type Member, type ReceiptCheck } from "@/lib/types";
 import { AttachFiles, MarkPaidForm, ReviewActions } from "./claim-actions";
+import { ReceiptCheckPanel } from "./receipt-check-panel";
 
 export const metadata = { title: "Claim" };
+
+// The AI receipt check (a server action on this page) can take most of a minute: 60 s is allowed on
+// every Vercel plan, and the check itself gives up after 55 s (src/lib/receipt-check.ts).
+export const maxDuration = 60;
 
 const EVENT_LABEL: Record<ClaimEvent["action"], string> = {
   submitted: "Submitted",
@@ -52,6 +58,29 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
   if (divisionsError) throw new Error(`divisions read failed: ${divisionsError.code}`);
   const may = permissions(me, claim, (myDivisions ?? []).map((d) => d.division_id as string));
   const payout = may.seePayout ? await payoutPanel(supabase, claim, ref) : null;
+  // This viewer's own AI receipt check (RLS: each reviewer reads only theirs). If it can't be read,
+  // the panel is left out; if what was saved isn't a check's shape, it is checked afresh.
+  const aiEnabled = receiptCheckEnabled();
+  let check: ReceiptCheck | null = null;
+  let checkReadable = may.seeCheck;
+  if (may.seeCheck) {
+    const { data, error: checkError } = await supabase.from("receipt_checks")
+      .select("verdict, summary, findings, files_checked, model, checked_at")
+      .eq("claim_id", claim.id).eq("checked_by", me.id).maybeSingle<ReceiptCheck>();
+    if (checkError) console.error("receipt check read failed", { code: checkError.code });
+    checkReadable = !checkError;
+    const findings = data && StoredFindings.safeParse(data.findings);
+    if (findings && !findings.success) console.error("receipt check findings malformed");
+    check = data && findings?.success ? { ...data, findings: findings.data } : null;
+  }
+  // Only a claim whose claimant was told about the check is checked (ai_check_notice, 0008).
+  let told = false;
+  if (aiEnabled && may.runCheck) {
+    const { data, error: noticeError } = await supabase.from("claims").select("ai_check_notice").eq("id", claim.id).maybeSingle();
+    if (noticeError) console.error("receipt check notice read failed", { code: noticeError.code });
+    told = data?.ai_check_notice === true;
+  }
+  const canRunCheck = may.runCheck && aiEnabled && told;
   // Finance only (RLS on bank_balances); everyone else gets none.
   const { data: accounts, error: accountsError } = may.markPaid
     ? await supabase.from("bank_balances").select("account_id, name, last4, balance_cents").eq("active", true).order("name")
@@ -131,6 +160,10 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                   approveLabel={claim.status === "pending_finance" ? "Approve for payment" : "Approve"} />
               </CardContent>
             </Card>
+          )}
+
+          {checkReadable && (check || canRunCheck) && (
+            <ReceiptCheckPanel claimId={claim.id} check={check} canRun={canRunCheck} autoRun={canRunCheck && !check} />
           )}
 
           {payout && (
@@ -223,6 +256,10 @@ function permissions(me: Member, c: Claim, ledDivisions: string[]) {
     seePayout: isFinance(me) && (c.status === "pending_finance" || c.status === "approved"),
     markPaid: isFinance(me) && c.status === "approved",
     attach: isFinance(me) && c.imported && c.attachment_paths.length < 5,
+    // The AI receipt check: whoever can decide the claim now runs one, and each reviewer sees only
+    // their own. record_receipt_check checks again.
+    seeCheck: isFinance(me) || me.role === "lead",
+    runCheck: reviews || finalises,
   };
 }
 
