@@ -4,8 +4,8 @@ import nodemailer, { type Transporter } from "nodemailer";
 
 /**
  * Sends e-mail over SMTP (Gmail by default: smtp.gmail.com:465 with an app
- * password). If SMTP isn't configured, nothing is sent; in development the
- * e-mail is printed instead.
+ * password). If SMTP isn't configured, nothing is sent and only an error code
+ * is logged, never the e-mail itself.
  *
  * Failures are logged, never thrown: a claim approval must not fail just
  * because a notification couldn't be delivered.
@@ -47,15 +47,15 @@ export async function sendEmail(to: string, subject: string, paragraphs: string[
 
   const t = getTransporter();
   if (!t) {
-    // Logs carry codes only (CLAUDE.md), so the email itself is never printed. Locally, use Mailpit
-    // or set SMTP_* to see real ones.
+    // Logs carry codes only (CLAUDE.md), so the email itself is never printed. To see them locally,
+    // set SMTP_* to a real mailbox.
     console.error("email not sent", { code: "smtp_not_configured" });
     return;
   }
   try {
     await t.sendMail({
       from: process.env.MAIL_FROM || process.env.SMTP_USER, // || so a blank MAIL_FROM falls back too
-            to,
+      to,
       subject,
       html,
       text,

@@ -105,7 +105,8 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
             <CardContent className="grid gap-3 sm:grid-cols-2">
               {!claim.attachment_paths.length && <p className="text-sm text-ink-soft sm:col-span-2">No files yet.</p>}
               {(files.data ?? []).map((f) => {
-                const name = (f.path ?? "").split("/").pop()?.replace(/^\d+-/, "") ?? "file";
+                // Uploads are named <hex or digits>-<file>: show just the file.
+                const name = (f.path ?? "").split("/").pop()?.replace(/^[0-9a-f]+-/i, "") ?? "file";
                 return f.signedUrl ? (
                   <a key={f.path} href={f.signedUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-line p-3 text-sm hover:bg-canvas">
                     <span className="grid size-10 place-items-center rounded-lg bg-canvas"><FileText className="size-5 text-ink-soft" /></span>

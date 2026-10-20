@@ -8,7 +8,6 @@ export const ROW_COLUMNS = "id, kind, status, claimant_name, description, amount
 
 type Raw = Pick<Claim, "id" | "kind" | "status" | "claimant_name" | "description" | "amount_cents" | "vendor_name" | "created_at" | "budget_id" | "category_id">;
 
-/** Adds budget and category names to claim rows, for ClaimsTable. */
 export { fetchAll };
 
 /** Adds budget and category names to claim rows, for ClaimsTable. Every name is read; a failure throws. */

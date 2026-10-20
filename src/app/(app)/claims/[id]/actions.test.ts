@@ -14,6 +14,10 @@ const ID = "40000000-0000-4000-8000-000000000001";
 const ACCOUNT = "50000000-0000-4000-8000-000000000001";
 const outcome = { claimant_id: "00000000-0000-4000-8000-000000000b01", claimant_name: "Vol One", amount_cents: 2500, budget_name: "Iftar" };
 const rpc = vi.fn();
+// The claim's kind and vendor, read to word the email.
+const claimRow = vi.fn();
+const from = vi.fn(() => ({ select: () => ({ eq: () => ({ maybeSingle: claimRow }) }) }));
+const invoice = { data: { kind: "invoice", vendor_name: "The Hall Pte Ltd" }, error: null };
 
 function returns(result: { data?: unknown; error?: unknown }) {
   rpc.mockReturnValue({ single: () => Promise.resolve({ data: null, error: null, ...result }) });
@@ -22,7 +26,9 @@ function returns(result: { data?: unknown; error?: unknown }) {
 beforeEach(() => {
   rpc.mockReset();
   vi.mocked(sendEmail).mockReset();
-  vi.mocked(createClient).mockResolvedValue({ rpc } as never);
+  claimRow.mockReset();
+  claimRow.mockResolvedValue({ data: { kind: "reimbursement", vendor_name: null }, error: null });
+  vi.mocked(createClient).mockResolvedValue({ rpc, from } as never);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -43,6 +49,23 @@ describe("decideClaim", () => {
     returns({ data: { ...outcome, status: "approved" } });
     await decideClaim(ID, true);
     expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "Your claim for $25.00 has been approved", expect.any(Array), expect.any(Object));
+  });
+
+  it("tells the submitter of a vendor invoice that Finance pays the vendor", async () => {
+    returns({ data: { ...outcome, status: "approved" } });
+    claimRow.mockResolvedValue(invoice);
+    await decideClaim(ID, true);
+    const [, subject, paragraphs] = vi.mocked(sendEmail).mock.calls[0];
+    expect(subject).toBe("Your invoice for $25.00 has been approved");
+    expect(paragraphs.join(" ")).toContain("(The Hall Pte Ltd, $25.00) has been approved by Finance, who will pay the vendor directly");
+    expect(paragraphs.join(" ")).not.toContain("You'll be paid");
+  });
+
+  it("skips the email, not the decision, if the claim can't be read to word it", async () => {
+    returns({ data: { ...outcome, status: "approved" } });
+    claimRow.mockResolvedValue({ data: null, error: { code: "XX000" } });
+    expect(await decideClaim(ID, true)).toEqual({ ok: true });
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it("emails the reason on rejection", async () => {
@@ -79,6 +102,15 @@ describe("markPaid", () => {
     expect(await markPaid(ID, "TXN-1", ACCOUNT)).toEqual({ ok: true });
     expect(rpc).toHaveBeenCalledWith("mark_paid", { p_claim: ID, p_reference: "TXN-1", p_account: ACCOUNT });
     expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", "You've been paid $25.00", expect.any(Array));
+  });
+
+  it("tells the submitter of a vendor invoice that the vendor was paid", async () => {
+    returns({ data: { ...outcome, status: "paid" } });
+    claimRow.mockResolvedValue(invoice);
+    await markPaid(ID, "TXN-1", ACCOUNT);
+    const [, subject, paragraphs] = vi.mocked(sendEmail).mock.calls[0];
+    expect(subject).toBe("Your invoice for $25.00 has been paid");
+    expect(paragraphs.join(" ")).toContain("We've paid The Hall Pte Ltd $25.00");
   });
 
   it("needs the account it was paid from", async () => {

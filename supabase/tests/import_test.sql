@@ -152,5 +152,12 @@ select pg_temp.login('0a100000-0000-4000-8000-000000000001');
 select throws_ok($$ select public.attach_claim_files(pg_temp.claim('I ordinary'), array['0a100000-0000-4000-8000-000000000001/x/r.pdf']) $$,
   'P0001', 'Only imported claims can have files added later.', 'only imported claims take files later');
 
+-- The reserve (0006, 0007): only Finance members' claims, imported ones included.
+select throws_ok($$ select public.import_paid_claims(jsonb_build_array(pg_temp.row('i-vol@test.local', 'I vol reserve', '2026-02-01', 'Reserve'))) $$,
+  '42501', 'Only Finance members can have claims against the reserve, and I Vol isn''t one.',
+  'a volunteer''s claim can''t be imported against the reserve');
+select is(public.import_paid_claims(jsonb_build_array(pg_temp.row('i-fin@test.local', 'I fin reserve', '2026-02-01', 'Reserve'))), 1,
+  'a Finance member''s can');
+
 select * from finish();
 rollback;
