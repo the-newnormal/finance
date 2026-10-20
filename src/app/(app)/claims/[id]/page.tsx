@@ -214,7 +214,7 @@ function permissions(me: Member, c: Claim, ledDivisions: string[]) {
   const own = c.claimant_id === me.id;
   const reviews =
     c.status === "pending_review" && !own &&
-    (isFinance(me) || (me.role === "lead" && ledDivisions.includes(c.division_id)));
+    (isFinance(me) || (me.role === "lead" && c.division_id !== null && ledDivisions.includes(c.division_id)));
   const finalises = c.status === "pending_finance" && isFinance(me);
   return {
     decide: reviews || finalises,

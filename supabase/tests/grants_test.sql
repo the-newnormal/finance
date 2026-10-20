@@ -81,7 +81,8 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.transfer_between_accounts(uuid, uuid, bigint, date, text)',
                   'public.mark_paid(uuid, text, uuid)',
                   'public.import_paid_claims(jsonb)',
-                  'public.attach_claim_files(uuid, text[])']) f;
+                  'public.attach_claim_files(uuid, text[])',
+                  'public.add_to_reserve(bigint, date, text)']) f;
 
 -- The private helpers are unreachable for anon, and the trigger functions for everyone.
 select ok(not has_function_privilege('anon', p.oid, 'execute'), format('anon: no execute on %s', p.oid::regprocedure))

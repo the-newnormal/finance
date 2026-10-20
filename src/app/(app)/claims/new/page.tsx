@@ -15,8 +15,8 @@ export default async function NewClaimPage() {
   // Every row (fetchAll pages past the API's cap), so no budget shows an empty category list; only
   // open budgets' provisions are kept. A failed read shows the error page, not a form with empty choices.
   const [openBudgets, allProvisions, categoryRows, saved] = await Promise.all([
-    fetchAll<Pick<Budget, "id" | "name" | "kind">>((from, to) =>
-      supabase.from("budgets").select("id, name, kind").eq("active", true).order("id").range(from, to)),
+    fetchAll<Pick<Budget, "id" | "name" | "kind" | "is_reserve">>((from, to) =>
+      supabase.from("budgets").select("id, name, kind, is_reserve").eq("active", true).order("id").range(from, to)),
     fetchAll<{ budget_id: string; category_id: string }>((from, to) =>
       supabase.from("budget_categories").select("budget_id, category_id").order("budget_id").order("category_id").range(from, to)),
     fetchAll<Pick<Category, "id" | "name">>((from, to) =>

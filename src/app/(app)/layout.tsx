@@ -11,6 +11,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ...(isFinance(me)
       ? [
           { href: "/payouts", label: "Payouts" },
+          { href: "/reserve", label: "Reserve" },
           { href: "/bank", label: "Bank" },
           { href: "/people", label: "People" },
           { href: "/setup", label: "Setup" },

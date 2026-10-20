@@ -99,7 +99,7 @@ function BudgetsCard({ budgets, divisions, categories }: { budgets: BudgetRow[];
               <div className="mr-auto">
                 <div className="font-medium">{b.name}</div>
                 <div className="text-xs text-ink-soft">
-                  {divisionName(b.division_id)} · {b.kind === "event" ? "Event" : "General"} · {formatSGD(totalOf(b))} across{" "}
+                  {divisionName(b.division_id ?? "")} · {b.kind === "event" ? "Event" : "General"} · {formatSGD(totalOf(b))} across{" "}
                   {b.guidelines.length} {b.guidelines.length === 1 ? "category" : "categories"}
                 </div>
               </div>
