@@ -29,6 +29,7 @@ const EVENT_LABEL: Record<ClaimEvent["action"], string> = {
   approved: "Approved by Finance",
   rejected: "Rejected",
   paid: "Paid",
+  edited: "Payment corrected by Finance",
 };
 
 export default async function ClaimPage({ params, searchParams }: PageProps<"/claims/[id]">) {

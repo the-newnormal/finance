@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/page-header";
+import type { EntryEdit } from "@/lib/bank-edits";
 import { paidFor } from "@/lib/claims";
 import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -33,17 +34,31 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
   if (account) query = query.eq("account_id", account);
   const { data: rows, error: ledgerError } = await query.range(page * PAGE, page * PAGE + PAGE);
   if (ledgerError) throw new Error(`ledger read failed: ${ledgerError.code}`);
-  const entries = (rows ?? []) as (Omit<Entry, "paid_for"> & { claim_id: string | null })[];
+  const entries = (rows ?? []) as Omit<Entry, "paid_for" | "reference" | "edits">[];
   const shown = entries.slice(0, PAGE);
   // A payout's note (written when it was paid) says who was paid and the bank reference; the ledger
   // leads with what the claim was for, read from the claim itself. If that can't be read, the note
   // alone is shown.
   const claimIds = shown.flatMap((e) => (e.claim_id ? [e.claim_id] : []));
-  const paid = new Map<string, string>();
+  const paid = new Map<string, { paidFor: string; reference: string | null }>();
   if (claimIds.length) {
-    const { data: claims, error: claimsError } = await supabase.from("claims").select("id, kind, description, vendor_name").in("id", claimIds);
+    const { data: claims, error: claimsError } = await supabase.from("claims")
+      .select("id, kind, description, vendor_name, payment_reference").in("id", claimIds);
     if (claimsError) console.error("ledger claims read failed", { code: claimsError.code });
-    for (const c of claims ?? []) paid.set(c.id as string, paidFor(c as Parameters<typeof paidFor>[0]));
+    for (const c of claims ?? []) {
+      paid.set(c.id as string, { paidFor: paidFor(c as Parameters<typeof paidFor>[0]), reference: c.payment_reference as string | null });
+    }
+  }
+  // Each shown entry's edits, oldest first (0009). If they can't be read, the entries show without them.
+  const edits = new Map<number, EntryEdit[]>();
+  if (shown.length) {
+    const { data: editRows, error: editsError } = await supabase.from("bank_entry_edits")
+      .select("entry_id, actor_name, reason, before, after, at").in("entry_id", shown.map((e) => e.id)).order("at").order("id");
+    if (editsError) console.error("ledger edits read failed", { code: editsError.code });
+    for (const r of editRows ?? []) {
+      const id = Number(r.entry_id);
+      edits.set(id, [...(edits.get(id) ?? []), r as unknown as EntryEdit]);
+    }
   }
 
   return (
@@ -54,9 +69,13 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
       />
       <BankManager
         accounts={(accounts ?? []).map((a) => ({ ...a, balance_cents: Number(a.balance_cents) }) as Account)}
-        entries={shown.map(({ claim_id, ...e }) => ({
-          ...e, amount_cents: Number(e.amount_cents), paid_for: (claim_id && paid.get(claim_id)) || null,
-        }))}
+        entries={shown.map((e) => {
+          const claim = e.claim_id ? paid.get(e.claim_id) : undefined;
+          return {
+            ...e, amount_cents: Number(e.amount_cents),
+            paid_for: claim?.paidFor ?? null, reference: claim?.reference ?? null, edits: edits.get(e.id) ?? [],
+          };
+        })}
         ledger={{ account, page, hasOlder: entries.length > PAGE }}
         today={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore" }).format(new Date())}
       />

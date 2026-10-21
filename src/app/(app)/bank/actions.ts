@@ -101,3 +101,48 @@ export async function setAccountActive(accountId: string, active: boolean): Prom
   const { error } = await supabase.from("bank_accounts").update({ active }).eq("id", accountId);
   return done(error);
 }
+
+const editInput = z.object({
+  entryId: z.number().int().positive(),
+  kind: z.enum(["opening", "grant", "payout", "adjustment", "transfer_in", "transfer_out"]),
+  accountId: uuid.optional(),
+  direction: z.enum(["in", "out"]).optional(),
+  amount: z.string(),
+  date,
+  note: note.optional(),
+  reference: z.string().trim().max(100).optional(),
+  reason: z.string().trim().min(3, "Say why you're changing it").max(300),
+});
+
+/**
+ * Corrects a ledger entry (edit_bank_entry, 0009). A payout's edit corrects its claim too, so the
+ * claim's page and every spending total are refreshed. The amount's sign follows the entry's kind;
+ * the database checks it against the entry it actually is.
+ */
+export async function editEntry(input: z.input<typeof editInput>): Promise<BankResult> {
+  await requireFinance();
+  const parsed = editInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const v = parsed.data;
+  // An opening balance can be zero; anything else moves money.
+  const cents = v.kind === "opening" ? parseBudgetToCents(v.amount) : parseAmountToCents(v.amount);
+  if (cents === null || (v.kind !== "opening" && !cents)) return { ok: false, error: "Enter a valid amount, e.g. 2500.00." };
+  const out = v.kind === "payout" || v.kind === "transfer_out" || (v.kind === "adjustment" && v.direction === "out");
+  const supabase = await createClient();
+  const { data: claimId, error } = await supabase.rpc("edit_bank_entry", {
+    p_entry: v.entryId,
+    p_account: v.accountId ?? null,
+    p_amount_cents: out ? -cents : cents,
+    p_date: v.date,
+    p_note: v.kind === "payout" || v.kind === "opening" ? null : (v.note ?? null),
+    p_reference: v.kind === "payout" ? (v.reference || null) : null,
+    p_reason: v.reason,
+  });
+  if (!error && claimId) {
+    revalidatePath(`/claims/${claimId}`);
+    revalidatePath("/payouts");
+    revalidatePath("/budgets", "layout");
+    revalidatePath("/reserve");
+  }
+  return done(error);
+}
