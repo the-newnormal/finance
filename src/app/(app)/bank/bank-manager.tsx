@@ -211,6 +211,9 @@ function EditEntryForm({ entry: e, accounts, today, onDone }: { entry: Entry; ac
     reference: e.reference ?? "",
     reason: "",
   });
+  // The entry as the draft was made from it, kept with the draft: a refresh while the form is open
+  // can bring newer values in `e`, and sending those would hide that the draft is stale.
+  const [was] = useState(() => ({ account_id: e.account_id, amount_cents: e.amount_cents, entry_date: e.entry_date, note: e.note }));
   const set = (k: keyof typeof v) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: ev.target.value });
   const choices = accounts.filter((a) => a.active || a.account_id === e.account_id);
 
@@ -219,8 +222,7 @@ function EditEntryForm({ entry: e, accounts, today, onDone }: { entry: Entry; ac
     run(() => editEntry({
       entryId: e.id, kind: e.kind, accountId: movable ? v.accountId : undefined, direction: v.direction,
       amount: v.amount, date: v.date, note: hasNote ? v.note : undefined,
-      reference: e.kind === "payout" ? v.reference : undefined, reason: v.reason,
-      was: { account_id: e.account_id, amount_cents: e.amount_cents, entry_date: e.entry_date, note: e.note },
+      reference: e.kind === "payout" ? v.reference : undefined, reason: v.reason, was,
     }), onDone);
   }
 

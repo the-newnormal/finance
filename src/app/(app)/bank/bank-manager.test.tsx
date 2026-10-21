@@ -96,6 +96,18 @@ describe("editing a ledger entry", () => {
     });
   });
 
+  it("sends the entry as the draft was made from it, even if a refresh brings newer values", async () => {
+    await render([entry({ id: 9, kind: "grant", amount_cents: 2000, note: "NAC grant" })]);
+    await act(async () => button("Edit").click());
+    await act(async () => type(field("Why"), "typo"));
+    // Someone else corrects it meanwhile, and the page refreshes with the form still open.
+    await render([entry({ id: 9, kind: "grant", amount_cents: 2500, note: "NAC grant" })]);
+    await act(async () => el.querySelector("form")!.requestSubmit());
+    expect(vi.mocked(editEntry).mock.calls[0][0]).toMatchObject({
+      amount: "20.00", was: { amount_cents: 2000, note: "NAC grant" },
+    });
+  });
+
   it("keeps an opening balance and a transfer on their accounts", async () => {
     await render([entry({ id: 8, kind: "transfer_out", amount_cents: -5000, note: "Transfer to Second" })]);
     await act(async () => button("Edit").click());
