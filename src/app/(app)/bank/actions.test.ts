@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { addAccount, recordEntry, transfer } from "./actions";
+import { addAccount, editEntry, recordEntry, transfer } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireFinance: vi.fn(async () => ({ id: "fin" })) }));
@@ -12,6 +13,7 @@ const rpc = vi.fn();
 
 beforeEach(() => {
   rpc.mockReset().mockResolvedValue({ error: null });
+  vi.mocked(revalidatePath).mockClear();
   vi.mocked(createClient).mockResolvedValue({ rpc } as never);
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
@@ -72,5 +74,49 @@ describe("addAccount", () => {
     const res = await addAccount({ name: "DBS Joint A", bank: "DBS", last4: "0123456789", opening: "10", asOf: "2026-10-01" });
     expect(res).toEqual({ ok: false, error: "Enter the account number's last four digits" });
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("editEntry", () => {
+  const was = { account_id: A, amount_cents: -2500, entry_date: "2026-02-10", note: "Vol · TXN-1" };
+  const edit = { entryId: 7, amount: "30.00", date: "2026-02-12", reason: "typo in the amount", was };
+
+  it("signs the amount by the entry's kind", async () => {
+    for (const [kind, sign] of [["grant", 1], ["transfer_in", 1], ["payout", -1], ["transfer_out", -1]] as const) {
+      rpc.mockClear();
+      await editEntry({ ...edit, kind, note: "NAC grant" });
+      expect(rpc.mock.calls[0][1]).toMatchObject({ p_amount_cents: sign * 3000 });
+    }
+    rpc.mockClear();
+    await editEntry({ ...edit, kind: "adjustment", direction: "out", note: "DBS fee" });
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_amount_cents: -3000 });
+  });
+
+  it("corrects a payout's reference, not its note, and refreshes its claim", async () => {
+    rpc.mockResolvedValue({ data: "c1", error: null });
+    expect(await editEntry({ ...edit, kind: "payout", accountId: B, note: "ignored", reference: "TXN-2" })).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("edit_bank_entry", {
+      p_entry: 7, p_account: B, p_amount_cents: -3000, p_date: "2026-02-12", p_note: null, p_reference: "TXN-2",
+      p_reason: "typo in the amount", p_was: was,
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/claims/c1");
+    expect(revalidatePath).toHaveBeenCalledWith("/budgets", "layout");
+  });
+
+  it("accepts a zero opening balance, and nothing else at zero", async () => {
+    expect(await editEntry({ ...edit, kind: "opening", amount: "0" })).toEqual({ ok: true });
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_amount_cents: 0, p_note: null });
+    expect((await editEntry({ ...edit, kind: "grant", amount: "0", note: "NAC grant" })).ok).toBe(false);
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("needs a reason", async () => {
+    expect(await editEntry({ ...edit, kind: "grant", note: "NAC grant", reason: " " })).toEqual({ ok: false, error: "Say why you're changing it" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("shows the database's own refusal", async () => {
+    rpc.mockResolvedValue({ data: null, error: { code: "P0001", message: "Nothing has changed." } });
+    expect(await editEntry({ ...edit, kind: "grant", note: "NAC grant" })).toEqual({ ok: false, error: "Nothing has changed." });
   });
 });

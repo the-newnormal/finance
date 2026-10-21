@@ -1,16 +1,18 @@
 "use client";
 
 import { Plus } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Table, TBody, TD, TH, THead } from "@/components/ui/table";
+import { describeEdit, type EntryEdit } from "@/lib/bank-edits";
 import { formatDate, formatSGD, parseBudgetToCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { addAccount, recordEntry, setAccountActive, transfer, type BankResult } from "./actions";
+import { addAccount, editEntry, recordEntry, setAccountActive, transfer, type BankResult } from "./actions";
 
 export type Account = {
   account_id: string;
@@ -29,8 +31,12 @@ export type Entry = {
   amount_cents: number;
   entry_date: string;
   note: string | null;
-  /** For a payout: what the claim was for (its description, and an invoice's vendor). */
+  /** For a payout: its claim, what the claim was for (its description, and an invoice's vendor), and its bank reference. */
+  claim_id: string | null;
   paid_for: string | null;
+  reference: string | null;
+  /** Corrections made to it, oldest first. */
+  edits: EntryEdit[];
   actor_name: string;
   created_at: string;
 };
@@ -70,14 +76,17 @@ function useAction() {
   return { pending, error, run };
 }
 
-export function BankManager({ accounts, entries, ledger, today }: {
+export function BankManager({ accounts, entries, ledger, today, historyMissing = false }: {
   accounts: Account[];
   entries: Entry[];
   ledger: { account: string | null; page: number; hasOlder: boolean };
   today: string;
+  /** The entries' edit history couldn't be read, so none is shown. */
+  historyMissing?: boolean;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<Form | null>(accounts.length ? null : { kind: "account" });
+  const [editing, setEditing] = useState<number | null>(null);
   const active = accounts.filter((a) => a.active);
   const name = (id: string) => accounts.find((a) => a.account_id === id)?.name ?? "—";
   const visible = entries;
@@ -116,28 +125,44 @@ export function BankManager({ accounts, entries, ledger, today }: {
           </Select>
         </CardHeader>
         <CardContent>
+          {historyMissing && <Alert className="mb-4">{"The entries' edit history couldn't be loaded. Refresh to try again."}</Alert>}
           {visible.length ? (
             <Table>
-              <THead><tr><TH>Date</TH><TH>Account</TH><TH>What</TH><TH>Note</TH><TH className="text-right">Amount</TH><TH>By</TH></tr></THead>
+              <THead><tr><TH>Date</TH><TH>Account</TH><TH>What</TH><TH>Note</TH><TH className="text-right">Amount</TH><TH>By</TH><TH><span className="sr-only">Edit</span></TH></tr></THead>
               <TBody>
                 {visible.map((e) => (
-                  <tr key={e.id}>
+                  <Fragment key={e.id}>
+                  <tr>
                     <TD className="whitespace-nowrap text-ink-soft">{formatDate(e.entry_date)}</TD>
                     <TD className="whitespace-nowrap">{name(e.account_id)}</TD>
                     <TD className="whitespace-nowrap">{KIND_LABEL[e.kind]}</TD>
                     <TD className="min-w-40 text-ink-soft">
                       {e.paid_for ? (
                         <>
-                          <div className="text-ink">{e.paid_for}</div>
+                          <Link href={`/claims/${e.claim_id}`} className="block text-ink hover:underline">{e.paid_for}</Link>
                           {e.note && <div className="text-xs">{e.note}</div>}
                         </>
                       ) : e.note}
+                      {e.edits.length > 0 && <EditHistory edits={e.edits} accountName={name} />}
                     </TD>
                     <TD className={cn("whitespace-nowrap text-right tabular-nums", e.amount_cents < 0 ? "text-danger" : "text-brand-deep")}>
                       {e.amount_cents > 0 ? "+" : "−"}{formatSGD(Math.abs(e.amount_cents))}
                     </TD>
                     <TD className="whitespace-nowrap text-ink-soft">{e.actor_name}</TD>
+                    <TD className="text-right">
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(editing === e.id ? null : e.id)} aria-expanded={editing === e.id}>
+                        Edit
+                      </Button>
+                    </TD>
                   </tr>
+                  {editing === e.id && (
+                    <tr>
+                      <td colSpan={7} className="border-b border-line bg-canvas/60 px-3 py-4">
+                        <EditEntryForm entry={e} accounts={accounts} today={today} onDone={() => setEditing(null)} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </TBody>
             </Table>
@@ -153,6 +178,98 @@ export function BankManager({ accounts, entries, ledger, today }: {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function EditHistory({ edits, accountName }: { edits: EntryEdit[]; accountName: (id: string) => string }) {
+  return (
+    <details className="mt-1 text-xs">
+      <summary className="cursor-pointer text-ink-soft">Edited {edits.length === 1 ? "once" : `${edits.length} times`}</summary>
+      <ol className="mt-1 grid gap-1.5">
+        {edits.map((ed, i) => (
+          <li key={i} className="rounded-lg bg-canvas px-2.5 py-1.5">
+            <div className="text-ink">{formatDate(ed.at)} · {ed.actor_name}: {ed.reason}</div>
+            <div>{describeEdit(ed, accountName).join(" · ")}</div>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function EditEntryForm({ entry: e, accounts, today, onDone }: { entry: Entry; accounts: Account[]; today: string; onDone: () => void }) {
+  const { pending, error, run } = useAction();
+  // Only these can move to another account; an opening balance and a transfer stay on theirs.
+  const movable = e.kind === "grant" || e.kind === "adjustment" || e.kind === "payout";
+  const hasNote = e.kind === "grant" || e.kind === "adjustment" || e.kind === "transfer_in" || e.kind === "transfer_out";
+  const [v, setV] = useState({
+    accountId: e.account_id,
+    direction: (e.amount_cents < 0 ? "out" : "in") as "in" | "out",
+    amount: (Math.abs(e.amount_cents) / 100).toFixed(2),
+    date: e.entry_date,
+    note: e.note ?? "",
+    reference: e.reference ?? "",
+    reason: "",
+  });
+  // The entry as the draft was made from it, kept with the draft: a refresh while the form is open
+  // can bring newer values in `e`, and sending those would hide that the draft is stale.
+  const [was] = useState(() => ({ account_id: e.account_id, amount_cents: e.amount_cents, entry_date: e.entry_date, note: e.note }));
+  const set = (k: keyof typeof v) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV({ ...v, [k]: ev.target.value });
+  const choices = accounts.filter((a) => a.active || a.account_id === e.account_id);
+
+  function submit(ev: React.FormEvent) {
+    ev.preventDefault();
+    run(() => editEntry({
+      entryId: e.id, kind: e.kind, accountId: movable ? v.accountId : undefined, direction: v.direction,
+      amount: v.amount, date: v.date, note: hasNote ? v.note : undefined,
+      reference: e.kind === "payout" ? v.reference : undefined, reason: v.reason, was,
+    }), onDone);
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" aria-label={`Edit ${KIND_LABEL[e.kind].toLowerCase()}`}>
+      <p className="text-sm text-ink-soft sm:col-span-2">
+        {e.kind === "payout"
+          ? "Correcting a payout corrects its claim too: its amount (and its budget's spending), reference and paid date. The claim's history says what changed, but never which account paid it."
+          : e.kind === "transfer_in" || e.kind === "transfer_out"
+            ? "Both sides of the transfer change together."
+            : "The change and your reason are kept with the entry."}
+      </p>
+      {movable && (
+        <Field label="Account">
+          <Select value={v.accountId} onChange={set("accountId")}>
+            {choices.map((a) => <option key={a.account_id} value={a.account_id}>{a.name} (•••• {a.last4})</option>)}
+          </Select>
+        </Field>
+      )}
+      {e.kind === "adjustment" && (
+        <Field label="Direction">
+          <Select value={v.direction} onChange={set("direction")}>
+            <option value="in">Add to the balance</option>
+            <option value="out">Take off the balance</option>
+          </Select>
+        </Field>
+      )}
+      <Field label="Amount (SGD)"><Input required inputMode="decimal" value={v.amount} onChange={set("amount")} /></Field>
+      <Field label="Date"><Input type="date" required max={today} value={v.date} onChange={set("date")} /></Field>
+      {hasNote && (
+        <Field label={e.kind === "grant" || e.kind === "adjustment" ? "Note" : "Note (optional)"} className="sm:col-span-2">
+          <Input required={e.kind === "grant" || e.kind === "adjustment"} minLength={e.kind === "grant" || e.kind === "adjustment" ? 3 : undefined}
+            maxLength={300} value={v.note} onChange={set("note")} />
+        </Field>
+      )}
+      {e.kind === "payout" && (
+        <Field label="Bank reference"><Input required minLength={3} maxLength={100} value={v.reference} onChange={set("reference")} /></Field>
+      )}
+      <Field label="Why are you changing it?" hint="Kept with the entry's history." className="sm:col-span-2">
+        <Input required minLength={3} maxLength={300} value={v.reason} onChange={set("reason")} placeholder="e.g. typo in the amount" />
+      </Field>
+      {error && <Alert className="sm:col-span-2">{error}</Alert>}
+      <div className="flex gap-2 sm:col-span-2">
+        <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save changes"}</Button>
+        <Button type="button" variant="ghost" onClick={onDone}>Cancel</Button>
+      </div>
+    </form>
   );
 }
 

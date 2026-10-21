@@ -151,7 +151,7 @@ export interface ClaimEvent {
   id: number;
   claim_id: string;
   actor_name: string;
-  action: "submitted" | "reviewed" | "approved" | "rejected" | "paid";
+  action: "submitted" | "reviewed" | "approved" | "rejected" | "paid" | "edited";
   note: string | null;
   at: string;
 }

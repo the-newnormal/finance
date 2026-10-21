@@ -16,7 +16,7 @@ where c.relkind in ('r', 'v', 'm', 'p')
 select has_table('public', t, format('%s exists', t))
 from unnest(array['divisions', 'members', 'division_leads', 'member_payouts', 'categories', 'budgets',
                   'budget_categories', 'budget_guidelines', 'claims', 'claim_events', 'bank_accounts',
-                  'bank_entries', 'reserve_additions', 'claim_rules', 'receipt_checks']) t;
+                  'bank_entries', 'bank_entry_edits', 'reserve_additions', 'claim_rules', 'receipt_checks']) t;
 select has_view('public', v, format('%s exists', v))
 from unnest(array['guideline_totals', 'budget_totals', 'bank_balances']) v;
 
@@ -32,7 +32,9 @@ from unnest(array['status', 'claimant_id', 'claimant_name', 'division_id', 'reje
 select ok(not has_table_privilege('authenticated', 'public.claim_events', p), format('claim_events: no %s', p))
 from unnest(array['insert', 'update', 'delete']) p;
 
-select ok(not has_table_privilege('authenticated', 'public.bank_entries', p), format('bank_entries: no %s (append-only, functions write it)', p))
+select ok(not has_table_privilege('authenticated', 'public.bank_entries', p), format('bank_entries: no %s (functions write it)', p))
+from unnest(array['insert', 'update', 'delete']) p;
+select ok(not has_table_privilege('authenticated', 'public.bank_entry_edits', p), format('bank_entry_edits: no %s (edit_bank_entry writes it; nobody changes it)', p))
 from unnest(array['insert', 'update', 'delete']) p;
 select ok(not has_table_privilege('authenticated', 'public.bank_accounts', p), format('bank_accounts: no %s', p))
 from unnest(array['insert', 'delete']) p;
@@ -84,6 +86,7 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.record_bank_entry(uuid, public.bank_entry_kind, bigint, date, text, bigint)',
                   'public.transfer_between_accounts(uuid, uuid, bigint, date, text)',
                   'public.mark_paid(uuid, text, uuid)',
+                  'public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text, jsonb)',
                   'public.import_paid_claims(jsonb)',
                   'public.attach_claim_files(uuid, text[])',
                   'public.add_to_reserve(bigint, date, text)',
@@ -95,7 +98,8 @@ from pg_proc p join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'pr
 select ok(not has_function_privilege('authenticated', f, 'execute'), format('authenticated: no execute on %s', f))
 from unnest(array['private.members_before_update()', 'private.budgets_before_update()',
                   'private.claims_before_insert()', 'private.claims_after_insert()',
-                  'private.finance_me()', 'private.me()', 'private.active_account(uuid)']) f;
+                  'private.finance_me()', 'private.me()', 'private.active_account(uuid)',
+                  'private.sgd(bigint)', 'private.on_day(timestamp with time zone, date)']) f;
 
 select * from finish();
 rollback;

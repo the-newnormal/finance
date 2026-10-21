@@ -32,7 +32,7 @@ pnpm typecheck && pnpm lint && pnpm test
 - **Budgets:** divisions are empty shells; Finance creates budgets in them. Each budget provisions spend categories with a guideline amount each, and claims can only use those categories. Leads and Finance see spending against each guideline.
 - **A claim** goes `pending_review` (volunteers only: one approval from a lead of the division) → `pending_finance` → `approved` → `paid`, or `rejected` with a reason. The claimant is emailed when it's approved, rejected or paid.
 - **Payouts:** Finance opens an approved claim to get a PayNow QR code (amount and reference `NN-XXXXXXXX` pre-filled), pays it in the bank app, then records the bank reference. Bank-transfer claims show the account details instead.
-- **Bank:** Finance records each account's opening balance, grants and other income, adjustments and transfers; paying a claim asks which account it came from. The Bank page shows each account's expected balance and compares it with the DBS balance you type in. Only Finance sees it.
+- **Bank:** Finance records each account's opening balance, grants and other income, adjustments and transfers; paying a claim asks which account it came from. The Bank page shows each account's expected balance and compares it with the DBS balance you type in. Finance can correct any entry, with a reason (every change is kept); correcting a payout corrects its claim's amount, reference and paid date too. Only Finance sees it.
 - **Payout details** are encrypted with AES-256-GCM (`PAYOUT_ENCRYPTION_KEY`) and the claimant's id as additional authenticated data; everyone but Finance sees only the last four characters.
 
 ## Deploying (Supabase + Vercel)
