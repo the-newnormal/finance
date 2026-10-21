@@ -112,6 +112,8 @@ const editInput = z.object({
   note: note.optional(),
   reference: z.string().trim().max(100).optional(),
   reason: z.string().trim().min(3, "Say why you're changing it").max(300),
+  /** The entry as the form saw it: the database refuses the edit if it has changed since. */
+  was: z.object({ account_id: z.string(), amount_cents: z.number().int(), entry_date: z.string(), note: z.string().nullable() }),
 });
 
 /**
@@ -137,6 +139,7 @@ export async function editEntry(input: z.input<typeof editInput>): Promise<BankR
     p_note: v.kind === "payout" || v.kind === "opening" ? null : (v.note ?? null),
     p_reference: v.kind === "payout" ? (v.reference || null) : null,
     p_reason: v.reason,
+    p_was: v.was,
   });
   if (!error && claimId) {
     revalidatePath(`/claims/${claimId}`);

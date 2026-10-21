@@ -78,7 +78,8 @@ describe("addAccount", () => {
 });
 
 describe("editEntry", () => {
-  const edit = { entryId: 7, amount: "30.00", date: "2026-02-12", reason: "typo in the amount" };
+  const was = { account_id: A, amount_cents: -2500, entry_date: "2026-02-10", note: "Vol · TXN-1" };
+  const edit = { entryId: 7, amount: "30.00", date: "2026-02-12", reason: "typo in the amount", was };
 
   it("signs the amount by the entry's kind", async () => {
     for (const [kind, sign] of [["grant", 1], ["transfer_in", 1], ["payout", -1], ["transfer_out", -1]] as const) {
@@ -96,7 +97,7 @@ describe("editEntry", () => {
     expect(await editEntry({ ...edit, kind: "payout", accountId: B, note: "ignored", reference: "TXN-2" })).toEqual({ ok: true });
     expect(rpc).toHaveBeenCalledWith("edit_bank_entry", {
       p_entry: 7, p_account: B, p_amount_cents: -3000, p_date: "2026-02-12", p_note: null, p_reference: "TXN-2",
-      p_reason: "typo in the amount",
+      p_reason: "typo in the amount", p_was: was,
     });
     expect(revalidatePath).toHaveBeenCalledWith("/claims/c1");
     expect(revalidatePath).toHaveBeenCalledWith("/budgets", "layout");

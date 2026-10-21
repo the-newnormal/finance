@@ -182,10 +182,22 @@ select pg_temp.login('0f100000-0000-4000-8000-000000000001');
 select public.decide_claim(pg_temp.claim('E normal'), true);
 select public.mark_paid(pg_temp.claim('E normal'), 'TXN-100', '0f500000-0000-4000-8000-000000000001');
 select throws_like($$ select public.edit_bank_entry(pg_temp.payout('E normal'), null, null, '2026-05-01', null, null, 'E typo') $$,
-  'The payment date is before the claim was submitted (%).', 'an ordinary claim isn''t paid before it was submitted');
+  'The payment date is before the claim was approved (%).', 'an ordinary claim isn''t paid before it was approved');
 select lives_ok($$ select public.edit_bank_entry(pg_temp.payout('E normal'), null, -4500, null, null, null, 'E paid 45') $$,
   'Finance corrects an ordinary claim''s payout');
 select is((select amount_cents from public.claims where description = 'E normal'), 4500::bigint, 'and its claim follows');
+
+-- ---------- a stale form ----------
+-- The form sends the entry as it saw it; another edit since then refuses it.
+select throws_ok($$ select public.edit_bank_entry(e.id, null, null, null, null, 'TXN-101', 'E stale',
+    jsonb_build_object('account_id', e.account_id, 'amount_cents', -4000, 'entry_date', e.entry_date, 'note', e.note))
+  from public.bank_entries e where e.id = pg_temp.payout('E normal') $$,
+  'P0001', 'This entry changed while you were editing it. Refresh the page to see the change, then edit it again.',
+  'an edit from a stale form is refused (the amount has changed since)');
+select lives_ok($$ select public.edit_bank_entry(e.id, null, null, null, null, 'TXN-101', 'E fresh',
+    jsonb_build_object('account_id', e.account_id, 'amount_cents', e.amount_cents, 'entry_date', e.entry_date, 'note', e.note))
+  from public.bank_entries e where e.id = pg_temp.payout('E normal') $$,
+  'one made from the entry as it is goes through');
 
 -- ---------- closed accounts ----------
 update public.bank_accounts set active = false where name = 'E Second';

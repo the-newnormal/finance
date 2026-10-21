@@ -49,10 +49,13 @@ revoke all on function private.sgd(bigint), private.on_day(timestamptz, date) fr
 
 -- Edits one entry (and a transfer's other entry with it). p_amount_cents is signed, as stored:
 -- money in positive, money out negative. Nulls keep what the entry has. p_reference is for payouts
--- only: their note is the claimant's name and the reference, as mark_paid writes it. Returns the
--- payout's claim, if any, so the server can refresh its page.
+-- only: their note is the claimant's name and the reference, as mark_paid writes it.
+-- p_was: the entry as the editor saw it ({account_id, amount_cents, entry_date, note}). If given,
+-- the edit is refused when the entry has changed since, so an edit made from a stale form can't
+-- quietly undo someone else's (as record_bank_entry's expected balance does for the DBS shortcut).
+-- Returns the payout's claim, if any, so the server can refresh its page.
 create function public.edit_bank_entry(p_entry bigint, p_account uuid, p_amount_cents bigint, p_date date,
-  p_note text, p_reference text, p_reason text)
+  p_note text, p_reference text, p_reason text, p_was jsonb default null)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   v_me public.members := private.finance_me();
@@ -61,6 +64,7 @@ declare
   v_transfer uuid;
   v_pair public.bank_entries;
   v_pair_before public.bank_entries;
+  v_before jsonb;
   v_account public.bank_accounts;
   v_pair_account public.bank_accounts;
   v_claim public.claims;
@@ -83,6 +87,17 @@ begin
   select * into v_entry from public.bank_entries e where e.id = p_entry for update;
   if v_entry.id is null then
     raise exception 'Entry not found.' using errcode = 'P0002';
+  end if;
+  v_before := jsonb_build_object('account_id', v_entry.account_id, 'amount_cents', v_entry.amount_cents,
+    'entry_date', v_entry.entry_date, 'note', v_entry.note);
+  if p_was is not null and p_was is distinct from v_before then
+    raise exception 'This entry changed while you were editing it. Refresh the page to see the change, then edit it again.';
+  end if;
+  -- Moving an opening balance's date decides which of the account's entries it already includes, so
+  -- it locks the account FOR UPDATE: that waits for, then blocks, every other write to the account
+  -- (each holds it FOR SHARE), so none can be dated before the new opening date meanwhile.
+  if v_entry.kind = 'opening' then
+    perform 1 from public.bank_accounts a where a.id = v_entry.account_id for update;
   end if;
 
   -- Both accounts open (and locked FOR SHARE until this commits, like every other write).
@@ -134,9 +149,12 @@ begin
     if v_date < v_claim.expense_date then
       raise exception 'The payment date is before the purchase date (%).', to_char(v_claim.expense_date, 'DD Mon YYYY');
     end if;
-    if not v_claim.imported and v_date < (v_claim.created_at at time zone 'Asia/Singapore')::date then
-      raise exception 'The payment date is before the claim was submitted (%).',
-        to_char((v_claim.created_at at time zone 'Asia/Singapore')::date, 'DD Mon YYYY');
+    -- An ordinary claim is paid only once approved (mark_paid), so never dated before that.
+    if not v_claim.imported and v_date < (select max(e.at at time zone 'Asia/Singapore')::date from public.claim_events e
+                                          where e.claim_id = v_claim.id and e.action = 'approved') then
+      raise exception 'The payment date is before the claim was approved (%).',
+        to_char((select max(e.at at time zone 'Asia/Singapore')::date from public.claim_events e
+                 where e.claim_id = v_claim.id and e.action = 'approved'), 'DD Mon YYYY');
     end if;
     v_ref := coalesce(nullif(btrim(coalesce(p_reference, '')), ''), v_claim.payment_reference);
     if length(coalesce(v_ref, '')) not between 3 and 100 then
@@ -168,8 +186,7 @@ begin
   update public.bank_entries e set account_id = v_account.id, amount_cents = v_amount, entry_date = v_date, note = v_note
    where e.id = v_entry.id;
   insert into public.bank_entry_edits (entry_id, actor_id, actor_name, reason, before, after)
-  values (v_entry.id, v_me.id, v_me.name, v_reason,
-    jsonb_build_object('account_id', v_entry.account_id, 'amount_cents', v_entry.amount_cents, 'entry_date', v_entry.entry_date, 'note', v_entry.note),
+  values (v_entry.id, v_me.id, v_me.name, v_reason, v_before,
     jsonb_build_object('account_id', v_account.id, 'amount_cents', v_amount, 'entry_date', v_date, 'note', v_note));
 
   -- The other side of a transfer: the same amount the other way and the same date. Its note changes
@@ -219,5 +236,5 @@ begin
   return v_claim.id;
 end $$;
 
-revoke all on function public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text) from public, anon;
-grant execute on function public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text) to authenticated;
+revoke all on function public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text, jsonb) from public, anon;
+grant execute on function public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text, jsonb) to authenticated;

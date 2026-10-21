@@ -86,7 +86,7 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.record_bank_entry(uuid, public.bank_entry_kind, bigint, date, text, bigint)',
                   'public.transfer_between_accounts(uuid, uuid, bigint, date, text)',
                   'public.mark_paid(uuid, text, uuid)',
-                  'public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text)',
+                  'public.edit_bank_entry(bigint, uuid, bigint, date, text, text, text, jsonb)',
                   'public.import_paid_claims(jsonb)',
                   'public.attach_claim_files(uuid, text[])',
                   'public.add_to_reserve(bigint, date, text)',

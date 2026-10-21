@@ -21,7 +21,7 @@ const entry = (e: Partial<Entry>): Entry => ({
   note: null, claim_id: null, paid_for: null, reference: null, edits: [], actor_name: "Fin Ance", created_at: "2026-10-01T00:00:00Z", ...e,
 });
 
-async function render(entries: Entry[]) {
+async function render(entries: Entry[], historyMissing = false) {
   await act(async () => root.render(
     <BankManager
       accounts={[
@@ -31,6 +31,7 @@ async function render(entries: Entry[]) {
       entries={entries}
       ledger={{ account: null, page: 0, hasOlder: false }}
       today="2026-10-20"
+      historyMissing={historyMissing}
     />,
   ));
 }
@@ -91,6 +92,7 @@ describe("editing a ledger entry", () => {
     expect(editEntry).toHaveBeenCalledWith({
       entryId: 7, kind: "payout", accountId: SECOND, direction: "out", amount: "30.00", date: "2026-10-01",
       note: undefined, reference: "TXN-2", reason: "paid 30 not 15",
+      was: { account_id: ACCOUNT, amount_cents: -1500, entry_date: "2026-10-01", note: "Vol One · TXN-1" },
     });
   });
 
@@ -99,6 +101,11 @@ describe("editing a ledger entry", () => {
     await act(async () => button("Edit").click());
     expect(el.textContent).toContain("Both sides of the transfer change together.");
     expect([...el.querySelectorAll("label")].some((l) => l.textContent?.startsWith("Account"))).toBe(false);
+  });
+
+  it("says so when the edit history couldn't be read, rather than show none as if there were none", async () => {
+    await render([entry({})], true);
+    expect(el.textContent).toContain("The entries' edit history couldn't be loaded.");
   });
 
   it("shows what each edit changed, who made it and why", async () => {

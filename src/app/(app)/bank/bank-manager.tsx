@@ -76,11 +76,13 @@ function useAction() {
   return { pending, error, run };
 }
 
-export function BankManager({ accounts, entries, ledger, today }: {
+export function BankManager({ accounts, entries, ledger, today, historyMissing = false }: {
   accounts: Account[];
   entries: Entry[];
   ledger: { account: string | null; page: number; hasOlder: boolean };
   today: string;
+  /** The entries' edit history couldn't be read, so none is shown. */
+  historyMissing?: boolean;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<Form | null>(accounts.length ? null : { kind: "account" });
@@ -123,6 +125,7 @@ export function BankManager({ accounts, entries, ledger, today }: {
           </Select>
         </CardHeader>
         <CardContent>
+          {historyMissing && <Alert className="mb-4">{"The entries' edit history couldn't be loaded. Refresh to try again."}</Alert>}
           {visible.length ? (
             <Table>
               <THead><tr><TH>Date</TH><TH>Account</TH><TH>What</TH><TH>Note</TH><TH className="text-right">Amount</TH><TH>By</TH><TH><span className="sr-only">Edit</span></TH></tr></THead>
@@ -217,6 +220,7 @@ function EditEntryForm({ entry: e, accounts, today, onDone }: { entry: Entry; ac
       entryId: e.id, kind: e.kind, accountId: movable ? v.accountId : undefined, direction: v.direction,
       amount: v.amount, date: v.date, note: hasNote ? v.note : undefined,
       reference: e.kind === "payout" ? v.reference : undefined, reason: v.reason,
+      was: { account_id: e.account_id, amount_cents: e.amount_cents, entry_date: e.entry_date, note: e.note },
     }), onDone);
   }
 

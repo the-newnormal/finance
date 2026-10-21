@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import type { EntryEdit } from "@/lib/bank-edits";
-import { paidFor } from "@/lib/claims";
+import { fetchAll, paidFor } from "@/lib/claims";
 import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { BankManager, type Account, type Entry } from "./bank-manager";
@@ -49,15 +49,22 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
       paid.set(c.id as string, { paidFor: paidFor(c as Parameters<typeof paidFor>[0]), reference: c.payment_reference as string | null });
     }
   }
-  // Each shown entry's edits, oldest first (0009). If they can't be read, the entries show without them.
+  // Each shown entry's edits, oldest first (0009), every page of them. If they can't all be read,
+  // none are shown, and the page says so rather than show part of a history.
   const edits = new Map<number, EntryEdit[]>();
+  let historyMissing = false;
   if (shown.length) {
-    const { data: editRows, error: editsError } = await supabase.from("bank_entry_edits")
-      .select("entry_id, actor_name, reason, before, after, at").in("entry_id", shown.map((e) => e.id)).order("at").order("id");
-    if (editsError) console.error("ledger edits read failed", { code: editsError.code });
-    for (const r of editRows ?? []) {
-      const id = Number(r.entry_id);
-      edits.set(id, [...(edits.get(id) ?? []), r as unknown as EntryEdit]);
+    try {
+      const editRows = await fetchAll((from, to) => supabase.from("bank_entry_edits")
+        .select("id, entry_id, actor_name, reason, before, after, at").in("entry_id", shown.map((e) => e.id))
+        .order("id").range(from, to));
+      for (const r of editRows) {
+        const id = Number(r.entry_id);
+        edits.set(id, [...(edits.get(id) ?? []), r as unknown as EntryEdit]);
+      }
+    } catch (e) {
+      console.error("ledger edits read failed", { code: e instanceof Error ? e.message : "unknown" });
+      historyMissing = true;
     }
   }
 
@@ -77,6 +84,7 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
           };
         })}
         ledger={{ account, page, hasOlder: entries.length > PAGE }}
+        historyMissing={historyMissing}
         today={new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore" }).format(new Date())}
       />
     </>
