@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TBody, TD, TH, THead } from "@/components/ui/table";
 import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
 import { singaporeToday } from "@/lib/dates";
+import Link from "next/link";
 import { formatDate, formatSGD } from "@/lib/money";
 import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
@@ -13,7 +14,7 @@ import { ReserveForm } from "./reserve-form";
 
 export const metadata = { title: "Reserve" };
 
-// The reserve: New Normal's one perpetual budget outside every division. Only Finance sees it
+// The reserve: Normal's one perpetual budget outside every division. Only Finance sees it
 // (RLS), claims against it, or adds to it.
 export default async function ReservePage() {
   await requireFinance();
@@ -22,33 +23,64 @@ export default async function ReservePage() {
   if (error) throw new Error(`reserve read failed: ${error.code}`);
   if (!reserve) throw new Error("reserve read failed: missing");
 
-  const [additions, claims] = await Promise.all([
+  const [additions, claims, budgets] = await Promise.all([
     fetchAll<ReserveAddition>((from, to) =>
       supabase.from("reserve_additions").select("id, amount_cents, added_on, note, actor_name").order("id").range(from, to)),
     fetchAll((from, to) =>
       supabase.from("claims").select(ROW_COLUMNS).eq("budget_id", reserve.budget_id).order("created_at").order("id").range(from, to),
     ).then(withNames),
+    fetchAll<BudgetTotals>((from, to) => supabase.from("budget_totals").select("*").eq("is_reserve", false).order("budget_id").range(from, to)),
   ]);
+  // Budgets still owing the reserve, most owed first.
+  const owing = budgets
+    .map((b) => ({ id: b.budget_id, name: b.name, owed: Number(b.loaned_cents) - Number(b.repaid_cents) }))
+    .filter((b) => b.owed > 0)
+    .sort((a, b) => b.owed - a.owed || a.name.localeCompare(b.name));
   additions.reverse(); // read oldest first (stable paging), show newest first
   claims.reverse();
 
   const funded = Number(reserve.funded_cents);
-  const used = Number(reserve.approved_cents) + Number(reserve.paid_cents);
+  const available = Number(reserve.available_cents);
+  const lent = Number(reserve.lent_out_cents);
 
   return (
     <>
       <PageHeader title="Reserve" description="A perpetual budget outside every division. Only Finance can see it, add to it or claim against it." />
       <Card className="mb-6 p-6">
-        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-xs uppercase tracking-wide text-ink-soft">Available</span>
-          <span className="font-serif text-3xl font-semibold tabular-nums">{formatSGD(funded - used)}</span>
+        <div className="mb-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-ink-soft">In reserve</div>
+            <div className={`font-serif text-3xl font-semibold tabular-nums ${available < 0 ? "text-danger" : ""}`}>{formatSGD(available)}</div>
+          </div>
+          <div className="sm:text-right">
+            <div className="text-xs uppercase tracking-wide text-ink-soft">On loan</div>
+            <div className="font-serif text-3xl font-semibold tabular-nums">{formatSGD(lent)}</div>
+          </div>
         </div>
         <BudgetBar allocated={funded} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
         <p className="mt-3 text-xs text-ink-soft">
           {formatSGD(funded)} added in total{Number(reserve.pending_cents) > 0 && ` · ${formatSGD(Number(reserve.pending_cents))} awaiting approval`}.
-          Claim against it by choosing <strong>Reserve</strong> as the budget on a new claim.
+          Money leaves the reserve only through a claim or a loan to a budget. Claim against it by choosing <strong>Reserve</strong> as the budget on a new claim; lend to a budget from that budget&rsquo;s page.
         </p>
       </Card>
+      {owing.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>On loan</CardTitle>
+            <CardDescription>Budgets that still owe the reserve.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="grid gap-2">
+              {owing.map((b) => (
+                <li key={b.id} className="flex items-baseline justify-between gap-3 text-sm">
+                  <Link href={`/budgets/${b.id}`} className="font-medium underline-offset-4 hover:underline">{b.name}</Link>
+                  <span className="tabular-nums">{formatSGD(b.owed)}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="grid content-start gap-6">
@@ -82,7 +114,7 @@ export default async function ReservePage() {
         <Card className="content-start">
           <CardHeader>
             <CardTitle>Add to the reserve</CardTitle>
-            <CardDescription>Additions are never edited or deleted; correct a mistake with an entry the other way.</CardDescription>
+            <CardDescription>Money in only, and never edited or deleted. Money leaves the reserve only through a claim or a loan.</CardDescription>
           </CardHeader>
           <CardContent><ReserveForm today={singaporeToday()} /></CardContent>
         </Card>

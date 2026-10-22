@@ -48,7 +48,10 @@ export default async function BudgetsPage() {
                 <div className="font-medium">Reserve</div>
                 <div className="text-xs text-ink-soft">Outside every division · Finance only</div>
               </div>
-              <div className="text-right font-serif text-lg font-semibold tabular-nums">{formatSGD(Number(reserve.funded_cents))}</div>
+              <div className="text-right">
+                <div className={`font-serif text-lg font-semibold tabular-nums ${Number(reserve.available_cents) < 0 ? "text-danger" : ""}`}>{formatSGD(Number(reserve.available_cents))}</div>
+                <div className="text-xs text-ink-soft">in reserve{Number(reserve.lent_out_cents) > 0 && ` · ${formatSGD(Number(reserve.lent_out_cents))} on loan`}</div>
+              </div>
             </div>
             <BudgetBar allocated={Number(reserve.funded_cents)} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
           </Card>
@@ -76,6 +79,14 @@ export default async function BudgetsPage() {
                         </div>
                       </div>
                       <div className="text-right font-serif text-lg font-semibold tabular-nums">{formatSGD(Number(b.guideline_cents))}</div>
+                    </div>
+                    <div className="mb-3 flex flex-wrap justify-between gap-x-3 text-xs">
+                      <span className={Number(b.available_cents) < 0 ? "font-medium text-danger" : "text-ink-soft"}>
+                        {formatSGD(Number(b.available_cents))} available to spend
+                      </span>
+                      {Number(b.loaned_cents) > Number(b.repaid_cents) && (
+                        <span className="text-ink-soft">{formatSGD(Number(b.loaned_cents) - Number(b.repaid_cents))} owed to the reserve</span>
+                      )}
                     </div>
                     <BudgetBar allocated={Number(b.guideline_cents)} committed={Number(b.approved_cents)} spent={Number(b.paid_cents)} />
                   </Card>

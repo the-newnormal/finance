@@ -16,7 +16,7 @@ where c.relkind in ('r', 'v', 'm', 'p')
 select has_table('public', t, format('%s exists', t))
 from unnest(array['divisions', 'members', 'division_leads', 'member_payouts', 'categories', 'budgets',
                   'budget_categories', 'budget_guidelines', 'claims', 'claim_events', 'bank_accounts',
-                  'bank_entries', 'bank_entry_edits', 'reserve_additions', 'claim_rules', 'receipt_checks']) t;
+                  'bank_entries', 'bank_entry_edits', 'reserve_additions', 'claim_rules', 'receipt_checks', 'budget_funds']) t;
 select has_view('public', v, format('%s exists', v))
 from unnest(array['guideline_totals', 'budget_totals', 'bank_balances']) v;
 
@@ -49,6 +49,8 @@ select ok(has_table_privilege('authenticated', 'public.member_payouts', 'delete'
 select ok(not has_table_privilege('authenticated', 'public.budget_categories', 'update'), 'budget_categories: not updated');
 select ok(has_table_privilege('authenticated', 'public.claim_rules', p), format('claim_rules: %s (Finance only, by RLS)', p))
 from unnest(array['select', 'insert', 'update', 'delete']) p;
+select ok(not has_table_privilege('authenticated', 'public.budget_funds', p), format('budget_funds: no %s (Finance''s functions write it)', p))
+from unnest(array['insert', 'update', 'delete']) p;
 select ok(not has_table_privilege('authenticated', 'public.receipt_checks', p), format('receipt_checks: no %s (record_receipt_check writes it)', p))
 from unnest(array['insert', 'update', 'delete']) p;
 select ok(has_table_privilege('authenticated', v, 'select') and not has_table_privilege('authenticated', v, 'insert'),
@@ -90,7 +92,11 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.import_paid_claims(jsonb)',
                   'public.attach_claim_files(uuid, text[])',
                   'public.add_to_reserve(bigint, date, text)',
-                  'public.record_receipt_check(uuid, public.receipt_verdict, text, jsonb, integer, text)']) f;
+                  'public.record_receipt_check(uuid, public.receipt_verdict, text, jsonb, integer, text)',
+                  'public.set_grant_commitment(uuid, bigint)',
+                  'public.record_grant(uuid, uuid, bigint, date, text)',
+                  'public.loan_from_reserve(uuid, bigint, date, text)',
+                  'public.repay_reserve(uuid, bigint, date, text)']) f;
 
 -- The private helpers are unreachable for anon, and the trigger functions for everyone.
 select ok(not has_function_privilege('anon', p.oid, 'execute'), format('anon: no execute on %s', p.oid::regprocedure))
@@ -99,7 +105,10 @@ select ok(not has_function_privilege('authenticated', f, 'execute'), format('aut
 from unnest(array['private.members_before_update()', 'private.budgets_before_update()',
                   'private.claims_before_insert()', 'private.claims_after_insert()',
                   'private.finance_me()', 'private.me()', 'private.active_account(uuid)',
-                  'private.sgd(bigint)', 'private.on_day(timestamp with time zone, date)']) f;
+                  'private.sgd(bigint)', 'private.on_day(timestamp with time zone, date)',
+                  'private.budget_available(uuid)', 'private.budget_owed(uuid)', 'private.reserve_available()',
+                  'private.fundable_budget(uuid)', 'private.check_fund(bigint, date, text)',
+                  'private.bank_entries_sync_grant()']) f;
 
 select * from finish();
 rollback;

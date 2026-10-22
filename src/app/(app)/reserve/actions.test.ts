@@ -7,7 +7,7 @@ vi.mock("@/lib/session", () => ({ requireFinance: vi.fn(async () => ({ id: "me",
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
 const rpc = vi.fn();
-const ok = { amount: "500", direction: "in" as const, date: "2026-10-20", note: "Grant from the council" };
+const ok = { amount: "500", date: "2026-10-20", note: "Grant from the council" };
 
 beforeEach(() => {
   rpc.mockReset();
@@ -22,9 +22,9 @@ describe("addToReserve", () => {
     expect(rpc).toHaveBeenCalledWith("add_to_reserve", { p_amount_cents: 50000, p_date: "2026-10-20", p_note: "Grant from the council" });
   });
 
-  it("records money out as a negative addition", async () => {
-    await addToReserve({ ...ok, direction: "out", amount: "12.50" });
-    expect(rpc).toHaveBeenCalledWith("add_to_reserve", expect.objectContaining({ p_amount_cents: -1250 }));
+  it("ignores any direction: additions are money in only", async () => {
+    await addToReserve({ ...ok, amount: "12.50", direction: "out" } as never);
+    expect(rpc).toHaveBeenCalledWith("add_to_reserve", expect.objectContaining({ p_amount_cents: 1250 }));
   });
 
   it.each([["abc"], ["0"], ["-5"]])("refuses the amount %j", async (amount) => {

@@ -50,7 +50,36 @@ export interface BudgetTotals {
   is_reserve: boolean;
   /** The reserve's funds (the sum of its additions); 0 for every other budget. */
   funded_cents: number;
+  /** Funding (0010). The grant committed to the budget; 0 for the reserve. */
+  grant_committed_cents: number;
+  /** Grants received, loans from the reserve, and repayments to it; 0 for the reserve. */
+  granted_cents: number;
+  loaned_cents: number;
+  repaid_cents: number;
+  /** What it can still spend: its funds less approved and disbursed claims (the reserve: less loans out too). */
+  available_cents: number;
+  /** The reserve only: loans out, not yet repaid. */
+  lent_out_cents: number;
 }
+
+export type BudgetFundKind = "grant" | "loan" | "repayment";
+
+/** budget_funds (0010): a budget's grants, loans from the reserve and repayments. Append-only. */
+export interface BudgetFund {
+  id: number;
+  budget_id: string;
+  kind: BudgetFundKind;
+  amount_cents: number;
+  entry_date: string;
+  note: string;
+  actor_name: string;
+}
+
+export const FUND_KIND_LABEL: Record<BudgetFundKind, string> = {
+  grant: "Grant received",
+  loan: "Loan from the reserve",
+  repayment: "Repaid to the reserve",
+};
 
 /** guideline_totals: spending against one provisioned category of one budget. */
 export interface GuidelineTotals {
