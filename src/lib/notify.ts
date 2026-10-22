@@ -93,7 +93,7 @@ export async function emailReviewers(claimId: string, stage: "pending_review" | 
   const what = review
     ? `${claim.claimant_name} has submitted a claim. Once you've reviewed it, it goes to Finance for final approval.`
     : invoice
-      ? `${claim.claimant_name} has submitted an invoice from ${claim.vendor_name}. It needs Finance's approval before the vendor is paid.`
+      ? `${claim.claimant_name} has submitted an invoice from ${claim.vendor_name}. It needs Finance's approval before it is settled.`
       : `${claim.claimant_name}'s claim is waiting for Finance's final approval.`;
   const email: Omit<Email, "paragraphs"> = {
     subject: review

@@ -19,7 +19,7 @@ export default async function ConfirmPage({ searchParams }: PageProps<"/auth/con
       <div className="w-full max-w-sm text-center">
         <div className="mb-8 flex justify-center"><Logo size={44} /></div>
         <div className="rounded-3xl border border-white/60 bg-white/70 p-6 shadow-[0_8px_40px_rgba(52,54,62,.08)] backdrop-blur-xl sm:p-8">
-          <h1 className="font-serif text-2xl font-semibold">{invite ? "Welcome to New Normal Finance" : "Continue signing in"}</h1>
+          <h1 className="font-serif text-2xl font-semibold">{invite ? "Welcome to Normal Finance" : "Continue signing in"}</h1>
           <p className="mt-1 text-sm text-ink-soft">Press the button to finish signing in on this device.</p>
           <form action="/auth/callback" method="post" className="mt-6">
             <input type="hidden" name="token_hash" value={one(params.token_hash)} />

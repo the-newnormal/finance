@@ -1,6 +1,6 @@
 # Finance — Engineering Contract
 
-New Normal's finance portal: volunteers claim incidentals they paid for, core personnel review their division's claims and submit vendor invoices, and Finance gives final approval and pays by PayNow. Keep it **simple**: claims, budgets and payouts, nothing more.
+Normal's finance portal: volunteers claim incidentals they paid for, core personnel review their division's claims and submit vendor invoices, and Finance gives final approval and reimburses or settles by PayNow. Keep it **simple**: claims, budgets and disbursements, nothing more.
 
 Stack: **Next.js (App Router) + TypeScript + Tailwind + shadcn/ui + Supabase (Postgres, Auth, Storage) + Vercel.** No Firebase.
 
@@ -11,6 +11,15 @@ Stack: **Next.js (App Router) + TypeScript + Tailwind + shadcn/ui + Supabase (Po
 - Small, focused PRs.
 - `main` is protected by the ruleset in `.github/rulesets/protect-main.json`, applied with `scripts/protect-main.sh` (the repo is public, so GitHub enforces it on the Free plan). Change it only by PR, then re-run the script; never loosen it in the GitHub UI.
 - `.claude/hooks/auto-push.sh` commits and pushes the current feature branch after every Claude response (never on `main`, never secrets). Opt out for a session with `FINANCE_AUTOPUSH=0`.
+
+## Glossary
+User-facing words (UI, emails, docs):
+- The claimant **pays** a shop or vendor.
+- Finance **reimburses** a claimant (a reimbursement claim) or **settles** a vendor invoice (an invoice claim). A `paid` claim shows as "Reimbursed" or "Settled" (`statusLabel(status, kind)` in `src/lib/types.ts`); an approved one as "Approved · to be reimbursed / settled".
+- Money leaving our bank for a claim is a **disbursement** ("Record disbursement", the Disbursements page at `/payouts`, the ledger's "Disbursement" entries).
+- A budget's **available** balance: grants received + loans from the reserve − repayments − approved and disbursed claims (0010).
+
+Database identifiers keep their old names (status `paid`, bank entry kind `payout`, `paid_cents`, `mark_paid`, `payout_enc`, `/payouts`, …); only the words people read change.
 
 ## Who can do what
 Sign-in is by email magic link only (no passwords, no Google or other social logins), and only for accounts Finance created: sign-ups are off.
@@ -45,6 +54,7 @@ Divisions are empty shells: they hold no money. Finance creates **budgets** insi
 - **Imported claims** (0005): Finance imports claims paid before this app with `import_paid_claims` (all rows in one transaction; each becomes a paid claim with `imported = true`, no payout details, and a payout entry on the named account, never dated before its opening balance). Receipts can be added to imported claims later with `attach_claim_files`. Nobody sets `imported` through the API.
 - **Claim rules** (0007): notices Finance writes on the Setup page and the claim form shows in its declaration, above the box the claimant must tick to submit, each for every claim, reimbursements or vendor invoices. Plain text (never rendered as HTML), links https only. Every active member reads the shown ones; Finance also reads hidden ones and is the only writer. The mandatory fields each document must show (receipt, invoice the claimant paid, vendor invoice) are TRP's lists, fixed in `src/lib/receipt-fields.ts`.
 - **AI receipt checks** (0008): when a reviewer opens a claim awaiting their decision, the server reads its receipts with Claude, as that reviewer, and saves the advice as theirs in `receipt_checks` through `record_receipt_check`. Only a reviewer who could decide the claim now records one: a lead of its division or Finance while it awaits review, Finance alone once it awaits final approval; never the claimant (Finance excepted, as it may finalise its own). Each reviewer reads only their own checks, and only while they can still review the claim, so no check (the function takes its result from its caller) can be passed off to anyone else. Only claims whose claimant was told are checked: `claims.ai_check_notice`, which `submitClaim` sets while the check is on (the form says so then). Advice never changes a claim's status; a reviewer may fill a rejection reason with what it found for the claimant to fix (`src/lib/receipt-fixes.ts`, never its concerns), and edits it before sending. Claimants check their own files as they submit (`precheckClaim`, `src/lib/receipt-check-claim.ts` shared with reviewers' checks): only files in their own folder, nothing saved, and they are shown what to fix but may submit anyway.
+- **Budget funding** (0010): each ordinary budget keeps a virtual balance from `budget_funds` (grants, loans from the reserve, repayments; append-only, readable by the division's leads and Finance), written only by Finance through `record_grant` (also a `grant` bank entry), `loan_from_reserve`, `repay_reserve`; `set_grant_commitment` records the grant committed. `budget_totals` shows `available_cents` (and `lent_out_cents` for the reserve). Money leaves the reserve only through a claim or a loan: additions are positive. A short balance never blocks a claim; Finance is warned on the claim page.
 - A budget and its guidelines are saved together through `save_budget`, and a member and their divisions through `add_member` / `update_member` (SECURITY INVOKER: RLS and triggers still decide).
 
 ## Security

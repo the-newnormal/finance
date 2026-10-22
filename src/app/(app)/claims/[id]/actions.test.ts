@@ -75,8 +75,8 @@ describe("decideClaim", () => {
     claimRow.mockResolvedValue(invoice);
     await decideClaim(ID, true);
     expect(sent().subject).toBe("Your invoice for $25.00 has been approved");
-    expect(sent().paragraphs.join(" ")).toContain("Finance has approved the invoice you submitted and will pay The Hall Pte Ltd directly");
-    expect(sent().paragraphs.join(" ")).not.toContain("You'll be paid");
+    expect(sent().paragraphs.join(" ")).toContain("Finance has approved the invoice you submitted and will settle it with The Hall Pte Ltd directly");
+    expect(sent().paragraphs.join(" ")).not.toContain("You'll be reimbursed");
     expect(sent().details).toContainEqual(["Vendor", "The Hall Pte Ltd"]);
   });
 
@@ -174,19 +174,19 @@ describe("markPaid", () => {
     returns({ data: { ...outcome, status: "paid" } });
     expect(await markPaid(ID, "TXN-1", ACCOUNT)).toEqual({ ok: true });
     expect(rpc).toHaveBeenCalledWith("mark_paid", { p_claim: ID, p_reference: "TXN-1", p_account: ACCOUNT });
-    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", expect.objectContaining({ subject: "You've been paid $25.00" }));
+    expect(sendEmail).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000b01", expect.objectContaining({ subject: "You've been reimbursed $25.00" }));
   });
 
   it("tells the submitter of a vendor invoice that the vendor was paid", async () => {
     returns({ data: { ...outcome, status: "paid" } });
     claimRow.mockResolvedValue(invoice);
     await markPaid(ID, "TXN-1", ACCOUNT);
-    expect(sent().subject).toBe("Your invoice for $25.00 has been paid");
-    expect(sent().paragraphs.join(" ")).toContain("We've paid The Hall Pte Ltd $25.00");
+    expect(sent().subject).toBe("Your invoice for $25.00 has been settled");
+    expect(sent().paragraphs.join(" ")).toContain("We've paid The Hall Pte Ltd $25.00, settling");
   });
 
   it("needs the account it was paid from", async () => {
-    expect(await markPaid(ID, "TXN-1", "")).toEqual({ ok: false, error: "Choose the account you paid from." });
+    expect(await markPaid(ID, "TXN-1", "")).toEqual({ ok: false, error: "Choose the account it was disbursed from." });
     expect(rpc).not.toHaveBeenCalled();
   });
 });

@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ...(canReview(me) ? [{ href: "/review", label: "Review" }, { href: "/budgets", label: "Budgets" }] : []),
     ...(isFinance(me)
       ? [
-          { href: "/payouts", label: "Payouts" },
+          { href: "/payouts", label: "Disbursements" },
           { href: "/reserve", label: "Reserve" },
           { href: "/bank", label: "Bank" },
           { href: "/people", label: "People" },

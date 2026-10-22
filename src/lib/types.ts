@@ -185,13 +185,21 @@ export interface ClaimEvent {
   at: string;
 }
 
+/** Statuses whatever the claim's kind (e.g. a filter across both). For one claim, use statusLabel. */
 export const STATUS_LABEL: Record<ClaimStatus, string> = {
   pending_review: "Awaiting review",
   pending_finance: "Awaiting Finance",
-  approved: "Approved · to be paid",
+  approved: "Approved · to be disbursed",
   rejected: "Rejected",
-  paid: "Paid",
+  paid: "Reimbursed or settled",
 };
+
+/** One claim's status in the glossary's words: Finance reimburses a claimant, settles a vendor invoice. */
+export function statusLabel(status: ClaimStatus, kind: ClaimKind): string {
+  if (status === "paid") return kind === "invoice" ? "Settled" : "Reimbursed";
+  if (status === "approved") return kind === "invoice" ? "Approved · to be settled" : "Approved · to be reimbursed";
+  return STATUS_LABEL[status];
+}
 
 export const PAYOUT_LABEL: Record<PayoutType, string> = {
   paynow_mobile: "PayNow (mobile)",

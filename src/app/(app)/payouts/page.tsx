@@ -11,7 +11,7 @@ import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { STATUS_LABEL, type Budget, type ClaimStatus, type Division } from "@/lib/types";
 
-export const metadata = { title: "Payouts" };
+export const metadata = { title: "Disbursements" };
 
 export default async function PayoutsPage() {
   await requireFinance();
@@ -32,11 +32,11 @@ export default async function PayoutsPage() {
   return (
     <>
       <PageHeader
-        title="Payouts"
-        description="Approved claims waiting to be paid. Open one for its PayNow QR code, pay it, then record the bank reference."
+        title="Disbursements"
+        description="Approved claims waiting to be disbursed. Open one for its PayNow QR code, make the transfer, then record the disbursement and its bank reference."
         action={
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline"><Link href="/payouts/import">Import paid claims</Link></Button>
+            <Button asChild variant="outline"><Link href="/payouts/import">Import past claims</Link></Button>
             <Button asChild variant="outline"><a href="#export">Export claims (CSV)</a></Button>
           </div>
         }
@@ -66,7 +66,7 @@ function ExportCard({ today, divisions, budgets }: { today: string; divisions: D
     <Card id="export" className="scroll-mt-6">
       <CardHeader>
         <CardTitle>Export claims (CSV)</CardTitle>
-        <CardDescription>Every claim, or only those you choose. Dates are Singapore dates. No payout details are included.</CardDescription>
+        <CardDescription>Every claim, or only those you choose. Dates are Singapore dates. No payment details are included.</CardDescription>
       </CardHeader>
       <CardContent>
         <form action="/api/export" method="get" className="grid gap-4 sm:grid-cols-3">
@@ -75,7 +75,7 @@ function ExportCard({ today, divisions, budgets }: { today: string; divisions: D
           <Field label="The dates are when it was">
             <Select name="dates" defaultValue="submitted">
               <option value="submitted">Submitted</option>
-              <option value="paid">Paid</option>
+              <option value="paid">Disbursed</option>
             </Select>
           </Field>
           <Field label="Division">

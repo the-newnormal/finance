@@ -114,7 +114,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
           <Card>
             <CardHeader className="gap-3">
               <div className="flex flex-wrap items-center gap-3">
-                <StatusBadge status={claim.status} />
+                <StatusBadge status={claim.status} kind={claim.kind} />
                 <span className="text-xs text-ink-soft">{ref}</span>
                 {claim.imported && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] text-ink-soft">Imported</span>}
               </div>
@@ -193,7 +193,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                       <div className="grid justify-items-center gap-2 rounded-xl bg-white p-4">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={payout.qr} alt="PayNow QR code" className="size-56" />
-                        <p className="text-center text-xs text-ink-soft">Scan with the New Normal bank app. Amount and reference are pre-filled.</p>
+                        <p className="text-center text-xs text-ink-soft">Scan with your bank app. Amount and reference are pre-filled.</p>
                       </div>
                     )}
                     <dl className="grid gap-2">

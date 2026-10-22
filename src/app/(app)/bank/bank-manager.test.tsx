@@ -81,7 +81,7 @@ describe("editing a ledger entry", () => {
   it("corrects a payout's amount, account and reference, with a reason", async () => {
     await render([entry({ id: 7, claim_id: "c1", paid_for: "Snacks", note: "Vol One · TXN-1", reference: "TXN-1" })]);
     await act(async () => button("Edit").click());
-    expect(el.textContent).toContain("Correcting a payout corrects its claim too");
+    expect(el.textContent).toContain("Correcting a disbursement corrects its claim too");
     await act(async () => {
       type(field("Account"), SECOND);
       type(field("Amount"), "30.00");

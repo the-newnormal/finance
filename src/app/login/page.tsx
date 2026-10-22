@@ -27,7 +27,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <LoginForm next={next} notice={error} />
         </div>
         <p className="mt-6 text-center text-xs text-ink-soft">
-          Accounts are created by New Normal Finance. Need access? Ask your event lead.
+          Accounts are created by Normal Finance. Need access? Ask your event lead.
         </p>
       </div>
     </main>

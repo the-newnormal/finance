@@ -62,7 +62,7 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
         subject: `Your invoice for ${amount} has been approved`,
         badge: { label: "Approved", tone: "success" },
         heading: "Your invoice has been approved",
-        paragraphs: [hi, `Finance has approved the invoice you submitted and will pay ${claim.vendor_name} directly.`],
+        paragraphs: [hi, `Finance has approved the invoice you submitted and will settle it with ${claim.vendor_name} directly.`],
         details: claimDetails({ description: claim.description, vendor: claim.vendor_name, amount, budget: data.budget_name }),
         link: { ...link, label: "View invoice" },
       }));
@@ -71,7 +71,7 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
         subject: `Your claim for ${amount} has been approved`,
         badge: { label: "Approved", tone: "success" },
         heading: "Your claim has been approved",
-        paragraphs: [hi, "Finance has approved your claim. You'll be paid shortly, and we'll email you when the money is on its way."],
+        paragraphs: [hi, "Finance has approved your claim. You'll be reimbursed shortly, and we'll email you when the money is on its way."],
         details: claimDetails({ description: claim.description, amount, budget: data.budget_name }),
         link,
       }));
@@ -103,12 +103,12 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
   return { ok: true };
 }
 
-// Records the payment and takes it off the chosen bank account's expected balance, in one database
+// Records the disbursement and takes it off the chosen bank account's expected balance, in one database
 // transaction (mark_paid).
 export async function markPaid(id: string, reference: string, accountId: string): Promise<ActionResult> {
   await requireMember();
   if (!uuid.safeParse(id).success) return { ok: false, error: "Claim not found." };
-  if (!uuid.safeParse(accountId).success) return { ok: false, error: "Choose the account you paid from." };
+  if (!uuid.safeParse(accountId).success) return { ok: false, error: "Choose the account it was disbursed from." };
   const supabase = await createClient();
   const { data, error } = await supabase
     .rpc("mark_paid", { p_claim: id, p_reference: reference, p_account: accountId })
@@ -120,19 +120,19 @@ export async function markPaid(id: string, reference: string, accountId: string)
   const claim = await kindOf(supabase, id);
   if (claim?.kind === "invoice") {
     after(() => emailClaimant(data.claimant_id, {
-      subject: `Your invoice for ${amount} has been paid`,
-      badge: { label: "Paid", tone: "paid" },
-      heading: `We've paid ${claim.vendor_name}`,
-      paragraphs: [hi, `We've paid ${claim.vendor_name} ${amount} for the invoice you submitted.`],
+      subject: `Your invoice for ${amount} has been settled`,
+      badge: { label: "Settled", tone: "paid" },
+      heading: `We've settled ${claim.vendor_name}'s invoice`,
+      paragraphs: [hi, `We've paid ${claim.vendor_name} ${amount}, settling the invoice you submitted.`],
       details: claimDetails({ description: claim.description, vendor: claim.vendor_name, amount, budget: data.budget_name }),
       link: { href: `/claims/${id}`, label: "View invoice" },
     }));
   } else if (claim) {
     after(() => emailClaimant(data.claimant_id, {
-      subject: `You've been paid ${amount}`,
-      badge: { label: "Paid", tone: "paid" },
-      heading: `You've been paid ${amount}`,
-      paragraphs: [hi, `We've sent you ${amount} for your claim. Thank you for everything you do for New Normal!`],
+      subject: `You've been reimbursed ${amount}`,
+      badge: { label: "Reimbursed", tone: "paid" },
+      heading: `You've been reimbursed ${amount}`,
+      paragraphs: [hi, `We've sent you ${amount} for your claim. Thank you for everything you do for Normal!`],
       details: claimDetails({ description: claim.description, amount, budget: data.budget_name }),
       link: { href: `/claims/${id}`, label: "View claim" },
     }));

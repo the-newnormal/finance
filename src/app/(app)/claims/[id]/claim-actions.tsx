@@ -91,7 +91,7 @@ export function MarkPaidForm({ claimId, accounts }: {
       }}
     >
       {error && <Alert>{error}</Alert>}
-      <Field label="Paid from" hint="Its expected balance on the Bank page goes down by this amount.">
+      <Field label="Disbursed from" hint="Its expected balance on the Bank page goes down by this amount.">
         <Select value={account} onChange={(e) => setAccount(e.target.value)} required>
           <option value="" disabled>Choose an account…</option>
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
@@ -101,7 +101,7 @@ export function MarkPaidForm({ claimId, accounts }: {
       <Field label="Bank transaction reference" hint="Once you've made the transfer, record it here. The claimant gets an e-mail.">
         <Input value={ref} onChange={(e) => setRef(e.target.value)} required />
       </Field>
-      <Button type="submit" disabled={pending || !accounts.length}>{pending ? "Saving…" : "Mark as paid"}</Button>
+      <Button type="submit" disabled={pending || !accounts.length}>{pending ? "Saving…" : "Record disbursement"}</Button>
     </form>
   );
 }

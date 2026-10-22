@@ -123,7 +123,7 @@ export function renderEmail(email: Email, siteUrl?: string): { html: string; tex
       <tr><td style="padding:0 4px 18px">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           ${logo}
-          <td valign="middle" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${C.ink};line-height:1.1">New Normal<br><span style="font-family:${SANS};font-size:11px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:${C.soft}">Finance</span></td>
+          <td valign="middle" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${C.ink};line-height:1.1">Normal<br><span style="font-family:${SANS};font-size:11px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:${C.soft}">Finance</span></td>
         </tr></table>
       </td></tr>
       <tr><td style="background:${C.surface};border:1px solid ${C.line};border-radius:16px;overflow:hidden">
@@ -141,7 +141,7 @@ export function renderEmail(email: Email, siteUrl?: string): { html: string; tex
         </table>
       </td></tr>
       <tr><td style="padding:18px 8px 0;font-size:12px;line-height:1.6;color:${C.soft};text-align:center">
-        You're getting this because you have a New Normal Finance account.${appUrl ? `<br><a href="${esc(appUrl)}" style="color:${C.soft}">${esc(appUrl.replace(/^https?:\/\//, ""))}</a>` : ""}
+        You're getting this because you have a Normal Finance account.${appUrl ? `<br><a href="${esc(appUrl)}" style="color:${C.soft}">${esc(appUrl.replace(/^https?:\/\//, ""))}</a>` : ""}
       </td></tr>
     </table>
   </td></tr>
@@ -156,7 +156,7 @@ export function renderEmail(email: Email, siteUrl?: string): { html: string; tex
     ...(email.callout ? [`${email.callout.label}: ${email.callout.text}`] : []),
     ...(email.closing ? [email.closing] : []),
     ...(href ? [`${email.link!.label}: ${href}`] : []),
-    "You're getting this because you have a New Normal Finance account.",
+    "You're getting this because you have a Normal Finance account.",
   ].join("\n\n");
 
   return { html, text };

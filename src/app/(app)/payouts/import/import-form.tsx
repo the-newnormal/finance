@@ -100,7 +100,7 @@ export function ImportForm() {
               {errors.length > 20 && <p className="mt-1">…and {errors.length - 20} more.</p>}
             </Alert>
           )}
-          {done !== null && <Alert tone="success">Imported {done} paid claim{done === 1 ? "" : "s"}.</Alert>}
+          {done !== null && <Alert tone="success">Imported {done} reimbursed claim{done === 1 ? "" : "s"}.</Alert>}
         </CardContent>
       </Card>
 
@@ -113,7 +113,7 @@ export function ImportForm() {
           <CardContent className="grid gap-4">
             <Table>
               <THead>
-                <tr><TH>Paid</TH><TH>Member</TH><TH>Budget</TH><TH>Category</TH><TH>Description</TH><TH className="text-right">Amount</TH><TH>Account</TH></tr>
+                <tr><TH>Disbursed</TH><TH>Member</TH><TH>Budget</TH><TH>Category</TH><TH>Description</TH><TH className="text-right">Amount</TH><TH>Account</TH></tr>
               </THead>
               <TBody>
                 {rows.slice(0, 200).map((r, i) => (
@@ -131,7 +131,7 @@ export function ImportForm() {
             </Table>
             {rows.length > 200 && <p className="text-sm text-ink-soft">Showing the first 200 rows.</p>}
             <Button className="justify-self-start" size="lg" disabled={busy} onClick={submit}>
-              {busy ? "Importing…" : `Import ${rows.length} paid claim${rows.length === 1 ? "" : "s"}`}
+              {busy ? "Importing…" : `Import ${rows.length} reimbursed claim${rows.length === 1 ? "" : "s"}`}
             </Button>
           </CardContent>
         </Card>

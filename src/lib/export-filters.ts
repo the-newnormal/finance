@@ -33,7 +33,7 @@ export function parseExportFilters(params: URLSearchParams): { ok: true; filters
   if ((from && !isDate(from)) || (to && !isDate(to))) return { ok: false, error: "Enter dates as YYYY-MM-DD." };
   if (from && to && from > to) return { ok: false, error: "The start date is after the end date." };
   const dates = get("dates") ?? "submitted";
-  if (dates !== "submitted" && dates !== "paid") return { ok: false, error: "Choose submitted or paid dates." };
+  if (dates !== "submitted" && dates !== "paid") return { ok: false, error: "Choose submitted or disbursement dates." };
   const divisionId = get("division");
   const budgetId = get("budget");
   if ((divisionId && !UUID.test(divisionId)) || (budgetId && !UUID.test(budgetId))) return { ok: false, error: "Choose a division and budget from the lists." };

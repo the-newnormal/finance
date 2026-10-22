@@ -6,8 +6,8 @@ const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"], variabl
 const newsreader = Newsreader({ subsets: ["latin"], weight: ["400", "600"], style: ["normal", "italic"], variable: "--font-newsreader" });
 
 export const metadata: Metadata = {
-  title: { default: "New Normal Finance", template: "%s · New Normal Finance" },
-  description: "Claims, budgets and reimbursements for New Normal.",
+  title: { default: "Normal Finance", template: "%s · Normal Finance" },
+  description: "Claims, budgets and reimbursements for Normal.",
   robots: { index: false, follow: false },
 };
 

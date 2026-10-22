@@ -15,7 +15,7 @@ type U = { id: string; name: string; email: string; role: Role; divisionIds: str
 const ROLE_HELP: Record<Role, string> = {
   volunteer: "Submits claims and sees only their own.",
   lead: "Also reviews volunteers' claims and sees budgets for the divisions they lead; can submit vendor invoices.",
-  finance: "Full access: final approval, payouts, bank accounts, people and setup.",
+  finance: "Full access: final approval, disbursements, bank accounts, people and setup.",
 };
 
 function AccessFields({ value, onChange, divisions }: { value: Pick<U, "role" | "divisionIds">; onChange: (v: Pick<U, "role" | "divisionIds">) => void; divisions: Division[] }) {
