@@ -82,7 +82,7 @@ describe("describeClaim", () => {
 
   it("names the vendor of an invoice", () => {
     expect(describeClaim({ ...claim, kind: "invoice", vendor_name: "The Hall Pte Ltd", expense_date: null }, [], []))
-      .toContain("vendor invoice (Finance will pay the vendor, The Hall Pte Ltd)");
+      .toContain("vendor invoice (Finance will settle it with the vendor, The Hall Pte Ltd)");
   });
 });
 

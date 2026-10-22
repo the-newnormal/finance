@@ -12,7 +12,7 @@ export function BudgetBar({ allocated, committed, spent }: { allocated: number; 
         <div className="bg-brand/60" style={{ width: pct(committed) }} />
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
-        <span><i className="mr-1 inline-block size-2 rounded-full bg-brand-deep" />Paid {formatSGD(spent)}</span>
+        <span><i className="mr-1 inline-block size-2 rounded-full bg-brand-deep" />Disbursed {formatSGD(spent)}</span>
         <span><i className="mr-1 inline-block size-2 rounded-full bg-brand/60" />Approved {formatSGD(committed)}</span>
         <span className={remaining < 0 ? "font-medium text-danger" : ""}>
           {remaining < 0 ? `Over by ${formatSGD(-remaining)}` : `${formatSGD(remaining)} left`}

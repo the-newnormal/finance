@@ -38,12 +38,12 @@ export default async function MyClaimsPage() {
     <>
       <PageHeader
         title={`Hi, ${me.name.split(" ")[0]}`}
-        description="Submit claims for things you've paid for on New Normal's behalf and follow them until you're reimbursed."
+        description="Submit claims for things you've paid for on Normal's behalf and follow them until you're reimbursed."
         action={<Button asChild size="lg"><Link href="/claims/new"><Plus /> New claim</Link></Button>}
       />
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Being reviewed" value={pending.total} sub={`${pending.count} claim${pending.count === 1 ? "" : "s"}`} />
-        <Stat label="Approved, to be paid" value={toBePaid.total} sub={`${toBePaid.count} claim${toBePaid.count === 1 ? "" : "s"}`} />
+        <Stat label="Approved, awaiting disbursement" value={toBePaid.total} sub={`${toBePaid.count} claim${toBePaid.count === 1 ? "" : "s"}`} />
         <Stat label="Reimbursed to date" value={paid.total} />
       </div>
       <Card>

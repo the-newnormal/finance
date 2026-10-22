@@ -23,14 +23,16 @@ export const metadata = { title: "Claim" };
 // every Vercel plan, and the check itself gives up after 55 s (src/lib/receipt-check.ts).
 export const maxDuration = 60;
 
-const EVENT_LABEL: Record<ClaimEvent["action"], string> = {
+const EVENT_LABEL: Record<Exclude<ClaimEvent["action"], "paid">, string> = {
   submitted: "Submitted",
   reviewed: "Approved by reviewer",
   approved: "Approved by Finance",
   rejected: "Rejected",
-  paid: "Paid",
-  edited: "Payment corrected by Finance",
+  edited: "Disbursement corrected by Finance",
 };
+// 'paid' (the database's word) reads as the glossary's: a claimant is reimbursed, an invoice settled.
+const eventLabel = (action: ClaimEvent["action"], kind: Claim["kind"]) =>
+  action === "paid" ? (kind === "invoice" ? "Settled" : "Reimbursed") : EVENT_LABEL[action];
 
 export default async function ClaimPage({ params, searchParams }: PageProps<"/claims/[id]">) {
   const [{ id }, { submitted, unsaved }] = await Promise.all([params, searchParams]);
@@ -88,6 +90,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
     ? await supabase.from("bank_balances").select("account_id, name, last4, balance_cents").eq("active", true).order("name")
     : { data: [], error: null };
   if (accountsError) throw new Error(`bank accounts read failed: ${accountsError.code}`);
+  const shortfall = may.seePayout ? await fundingShortfall(supabase, claim) : null;
 
   return (
     <>
@@ -97,12 +100,21 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
       {submitted && <Alert tone="success" className="mb-6">Thanks! Your claim has been submitted. We&apos;ll email you when it&apos;s approved.</Alert>}
       {unsaved && <Alert className="mb-6">Your payout details couldn&apos;t be remembered for next time. You&apos;ll need to enter them again on your next claim.</Alert>}
 
+      {shortfall && (
+        <Alert className="mb-6">
+          {shortfall.reserve ? "The reserve" : "This claim's budget"} is {formatSGD(shortfall.cents)} short
+          {claim.status === "approved" ? " now that this claim is approved" : " of this claim's amount"}.
+          {" "}This doesn&apos;t stop it, but check before disbursing.
+          {!shortfall.reserve && <> <Link href={`/budgets/${claim.budget_id}`} className="font-medium underline underline-offset-4">Take a loan from the reserve</Link> on the budget&apos;s page.</>}
+        </Alert>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="grid content-start gap-6">
           <Card>
             <CardHeader className="gap-3">
               <div className="flex flex-wrap items-center gap-3">
-                <StatusBadge status={claim.status} />
+                <StatusBadge status={claim.status} kind={claim.kind} />
                 <span className="text-xs text-ink-soft">{ref}</span>
                 {claim.imported && <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] text-ink-soft">Imported</span>}
               </div>
@@ -125,7 +137,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                 ) : (
                   <Item label="Date of purchase">{claim.expense_date ? formatDate(claim.expense_date) : "—"}</Item>
                 )}
-                <Item label="Pay to">{claim.payout_type ? `${PAYOUT_LABEL[claim.payout_type]} · ${claim.payout_masked}` : "Paid before this app"}</Item>
+                <Item label="Pay to">{claim.payout_type ? `${PAYOUT_LABEL[claim.payout_type]} · ${claim.payout_masked}` : (claim.kind === "invoice" ? "Settled before this app" : "Reimbursed before this app")}</Item>
                 <Item label="Description" className="sm:col-span-2"><p className="whitespace-pre-wrap">{claim.description}</p></Item>
                 {claim.rejection_reason && <Item label="Reason for rejection" className="sm:col-span-2">{claim.rejection_reason}</Item>}
               </dl>
@@ -159,7 +171,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
               <CardHeader><CardTitle>{claim.status === "pending_finance" ? "Finance approval" : "Your review"}</CardTitle></CardHeader>
               <CardContent>
                 <ReviewActions claimId={claim.id} canApprove canReject
-                  approveLabel={claim.status === "pending_finance" ? "Approve for payment" : "Approve"}
+                  approveLabel={claim.status === "pending_finance" ? (claim.kind === "invoice" ? "Approve for settlement" : "Approve for reimbursement") : "Approve"}
                   suggestedReason={check && rejectionReason(check)} />
               </CardContent>
             </Card>
@@ -171,7 +183,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
 
           {payout && (
             <Card>
-              <CardHeader><CardTitle>{claim.kind === "invoice" ? "Pay vendor" : "Reimburse"}</CardTitle></CardHeader>
+              <CardHeader><CardTitle>{claim.kind === "invoice" ? "Settle invoice" : "Reimburse"}</CardTitle></CardHeader>
               <CardContent className="grid gap-4 text-sm">
                 {"error" in payout ? (
                   <Alert>{payout.error}</Alert>
@@ -181,7 +193,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                       <div className="grid justify-items-center gap-2 rounded-xl bg-white p-4">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={payout.qr} alt="PayNow QR code" className="size-56" />
-                        <p className="text-center text-xs text-ink-soft">Scan with the New Normal bank app. Amount and reference are pre-filled.</p>
+                        <p className="text-center text-xs text-ink-soft">Scan with your bank app. Amount and reference are pre-filled.</p>
                       </div>
                     )}
                     <dl className="grid gap-2">
@@ -222,7 +234,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
                       <Check className="size-3" />
                     </span>
                     <div>
-                      <div className="font-medium">{EVENT_LABEL[e.action]}</div>
+                      <div className="font-medium">{eventLabel(e.action, claim.kind)}</div>
                       <div className="text-xs text-ink-soft">{e.actor_name} · {formatDate(e.at)}</div>
                       {e.note && <div className="mt-1 rounded-lg bg-canvas px-2.5 py-1.5 text-xs">{e.note}</div>}
                     </div>
@@ -298,4 +310,22 @@ async function payoutPanel(
     );
   }
   return { details, qr };
+}
+
+// Warn-only (0010): Finance sees when a claim awaiting final approval or disbursement is more than its
+// budget has available. An approved claim is already counted in available, so then it's short only
+// if available is below zero. Nothing is blocked; if the balance can't be read, nothing is shown.
+async function fundingShortfall(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  claim: Claim,
+): Promise<{ cents: number; reserve: boolean } | null> {
+  const { data, error } = await supabase.from("budget_totals").select("available_cents, is_reserve")
+    .eq("budget_id", claim.budget_id).maybeSingle<{ available_cents: number; is_reserve: boolean }>();
+  if (error || !data) {
+    if (error) console.error("budget balance read failed", { code: error.code });
+    return null;
+  }
+  const available = Number(data.available_cents);
+  const cents = claim.status === "approved" ? -available : Number(claim.amount_cents) - available;
+  return cents > 0 ? { cents, reserve: data.is_reserve } : null;
 }

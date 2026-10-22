@@ -28,7 +28,7 @@ describe("parseExportFilters", () => {
   });
 
   it("refuses anything not offered in the lists", () => {
-    expect(parse("dates=purchase")).toEqual({ ok: false, error: "Choose submitted or paid dates." });
+    expect(parse("dates=purchase")).toEqual({ ok: false, error: "Choose submitted or disbursement dates." });
     expect(parse("division=nope")).toEqual({ ok: false, error: "Choose a division and budget from the lists." });
     expect(parse("budget=1;drop")).toEqual({ ok: false, error: "Choose a division and budget from the lists." });
     expect(parse("status=deleted")).toEqual({ ok: false, error: "Choose a status from the list." });

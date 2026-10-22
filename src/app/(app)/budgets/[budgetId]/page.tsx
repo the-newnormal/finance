@@ -4,29 +4,52 @@ import { notFound } from "next/navigation";
 import { BudgetBar } from "@/components/budget-bar";
 import { ClaimsTable } from "@/components/claims-table";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchAll, ROW_COLUMNS, withNames } from "@/lib/claims";
-import { formatSGD } from "@/lib/money";
+import { singaporeToday } from "@/lib/dates";
+import { formatDate, formatSGD } from "@/lib/money";
 import { requireReviewer } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import type { BudgetTotals, GuidelineTotals } from "@/lib/types";
+import { FUND_KIND_LABEL, isFinance, type BudgetFund, type BudgetTotals, type GuidelineTotals } from "@/lib/types";
+import { FundingForms, type FundingAccount, type UnassignedGrant } from "./funding-forms";
 
 export default async function BudgetPage({ params }: PageProps<"/budgets/[budgetId]">) {
   const { budgetId } = await params;
-  await requireReviewer();
+  const me = await requireReviewer();
+  const finance = isFinance(me);
   const supabase = await createClient();
   const { data: budget, error } = await supabase.from("budget_totals").select("*").eq("budget_id", budgetId).maybeSingle<BudgetTotals>();
   if (error) throw new Error(`budget read failed: ${error.code}`); // an outage, not a missing budget
   if (!budget) notFound();
 
-  const [guidelines, claims] = await Promise.all([
+  const [guidelines, claims, funds, financeData] = await Promise.all([
     fetchAll<GuidelineTotals>((from, to) =>
       supabase.from("guideline_totals").select("*").eq("budget_id", budgetId).order("category_id").range(from, to)),
     fetchAll((from, to) =>
       supabase.from("claims").select(ROW_COLUMNS).eq("budget_id", budgetId).order("created_at").order("id").range(from, to),
     ).then(withNames).then((rows) => rows.reverse()), // read oldest first (stable paging), show newest first
+    // budget_funds: the division's leads and Finance (RLS), like the budget's other amounts.
+    fetchAll<BudgetFund>((from, to) =>
+      supabase.from("budget_funds").select("id, budget_id, kind, amount_cents, entry_date, note, actor_name")
+        .eq("budget_id", budgetId).order("entry_date").order("id").range(from, to)).then((rows) => rows.reverse()),
+    finance && !budget.is_reserve ? financeReads(supabase) : null,
   ]);
   guidelines.sort((a, b) => a.category_name.localeCompare(b.category_name));
+
+  const committed = Number(budget.grant_committed_cents);
+  const granted = Number(budget.granted_cents);
+  const loaned = Number(budget.loaned_cents);
+  const repaid = Number(budget.repaid_cents);
+  const available = Number(budget.available_cents);
+  const owed = Math.max(loaned - repaid, 0);
+  const funding: [string, number][] = [
+    ["Grant committed", committed],
+    ["Grants received", granted],
+    ["Still to come", Math.max(committed - granted, 0)],
+    ["Loans from the reserve", loaned],
+    ["Repaid", repaid],
+    ["Still owed", owed],
+  ];
 
   return (
     <>
@@ -36,6 +59,60 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
       <Card className="mb-6 p-5">
         <BudgetBar allocated={Number(budget.guideline_cents)} committed={Number(budget.approved_cents)} spent={Number(budget.paid_cents)} />
       </Card>
+      {!budget.is_reserve && (
+        <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+          <Card className="content-start">
+            <CardHeader>
+              <CardTitle>Funding</CardTitle>
+              <CardDescription>Grants received and loans from the reserve, less repayments and approved and disbursed claims.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-5">
+              <div className={`rounded-xl border p-4 ${available < 0 ? "border-danger/40 bg-danger/5" : "border-line"}`}>
+                <div className="text-xs uppercase tracking-wide text-ink-soft">Available to spend</div>
+                <div className={`font-serif text-3xl font-semibold tabular-nums ${available < 0 ? "text-danger" : ""}`}>{formatSGD(available)}</div>
+              </div>
+              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                {funding.map(([label, cents]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-ink-soft">{label}</dt>
+                    <dd className="tabular-nums">{formatSGD(cents)}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div>
+                <h3 className="mb-2 text-sm font-medium">History</h3>
+                {funds.length === 0 ? (
+                  <p className="text-sm text-ink-soft">No grants or loans yet.</p>
+                ) : (
+                  <ul className="grid gap-2">
+                    {funds.map((f) => (
+                      <li key={f.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-line pb-2 text-sm last:border-0">
+                        <span>
+                          <span className="font-medium">{FUND_KIND_LABEL[f.kind]}</span>
+                          <span className="text-ink-soft"> · {formatDate(f.entry_date)} · {f.note} · {f.actor_name}</span>
+                        </span>
+                        <span className={`tabular-nums ${f.kind === "repayment" ? "text-ink-soft" : ""}`}>
+                          {f.kind === "repayment" ? "−" : "+"}{formatSGD(Number(f.amount_cents))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          {financeData && (
+            <Card className="content-start">
+              <CardHeader><CardTitle>Fund this budget</CardTitle></CardHeader>
+              <CardContent>
+                <FundingForms budgetId={budget.budget_id} today={singaporeToday()} accounts={financeData.accounts}
+                  reserveAvailable={financeData.reserveAvailable} owed={owed} committed={committed}
+                  unassignedGrants={financeData.unassignedGrants} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card>
           <CardHeader><CardTitle>Claims</CardTitle></CardHeader>
@@ -67,4 +144,25 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
       </div>
     </>
   );
+}
+
+// Finance's forms need the open bank accounts and what the reserve has to lend (both Finance only, RLS).
+async function financeReads(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const [accounts, reserve, grants, assigned] = await Promise.all([
+    supabase.from("bank_balances").select("account_id, name, bank, last4").eq("active", true).order("name"),
+    supabase.from("budget_totals").select("available_cents").eq("is_reserve", true).maybeSingle<Pick<BudgetTotals, "available_cents">>(),
+    // Grants recorded on the Bank page that no budget has yet, to assign one to this budget.
+    fetchAll<UnassignedGrant>((from, to) =>
+      supabase.from("bank_entries").select("id, amount_cents, entry_date, note").eq("kind", "grant").order("id").range(from, to)),
+    fetchAll<{ bank_entry_id: number }>((from, to) =>
+      supabase.from("budget_funds").select("bank_entry_id").eq("kind", "grant").order("id").range(from, to)),
+  ]);
+  const taken = new Set(assigned.map((f) => f.bank_entry_id));
+  if (accounts.error) console.error("bank accounts read failed", { code: accounts.error.code });
+  if (reserve.error) console.error("reserve read failed", { code: reserve.error.code });
+  return {
+    accounts: (accounts.data ?? []) as FundingAccount[],
+    reserveAvailable: reserve.data ? Number(reserve.data.available_cents) : null,
+    unassignedGrants: grants.filter((g) => !taken.has(g.id)).reverse(),
+  };
 }

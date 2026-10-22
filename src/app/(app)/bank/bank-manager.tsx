@@ -44,7 +44,7 @@ export type Entry = {
 const KIND_LABEL: Record<Entry["kind"], string> = {
   opening: "Opening balance",
   grant: "Grant / income",
-  payout: "Claim paid",
+  payout: "Disbursement",
   adjustment: "Adjustment",
   transfer_in: "Transfer in",
   transfer_out: "Transfer out",
@@ -230,7 +230,7 @@ function EditEntryForm({ entry: e, accounts, today, onDone }: { entry: Entry; ac
     <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2" aria-label={`Edit ${KIND_LABEL[e.kind].toLowerCase()}`}>
       <p className="text-sm text-ink-soft sm:col-span-2">
         {e.kind === "payout"
-          ? "Correcting a payout corrects its claim too: its amount (and its budget's spending), reference and paid date. The claim's history says what changed, but never which account paid it."
+          ? "Correcting a disbursement corrects its claim too: its amount (and its budget's spending), reference and disbursement date. The claim's history says what changed, but never which account it was disbursed from."
           : e.kind === "transfer_in" || e.kind === "transfer_out"
             ? "Both sides of the transfer change together."
             : "The change and your reason are kept with the entry."}

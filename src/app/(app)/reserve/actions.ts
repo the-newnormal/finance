@@ -10,13 +10,12 @@ export type ReserveResult = { ok: true } | { ok: false; error: string };
 
 const input = z.object({
   amount: z.string(),
-  /** Money moved out of the reserve (or a correction) is recorded as a negative addition. */
-  direction: z.enum(["in", "out"]),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a date"),
   note: z.string().trim().min(3, "Add a note saying where the funds come from").max(300),
 });
 
-// add_to_reserve checks the caller is Finance and stamps who did it (0006_reserve.sql).
+// add_to_reserve checks the caller is Finance and stamps who did it (0006_reserve.sql). Additions are
+// money in only (0010): money leaves the reserve only through a claim or a loan.
 export async function addToReserve(raw: z.input<typeof input>): Promise<ReserveResult> {
   await requireFinance();
   const parsed = input.safeParse(raw);
@@ -27,13 +26,33 @@ export async function addToReserve(raw: z.input<typeof input>): Promise<ReserveR
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("add_to_reserve", {
-    p_amount_cents: v.direction === "in" ? cents : -cents,
+    p_amount_cents: cents,
     p_date: v.date,
     p_note: v.note,
   });
   if (error) {
     if (["P0001", "42501"].includes(error.code ?? "")) return { ok: false, error: error.message };
     console.error("reserve addition failed", { code: error.code });
+    return { ok: false, error: "That couldn't be saved. Try again." };
+  }
+  revalidatePath("/reserve");
+  revalidatePath("/budgets");
+  return { ok: true };
+}
+
+// Reverses an addition entered by mistake (reverse_reserve_addition): an entry of the opposite
+// amount that names it. A correction, not money leaving the reserve.
+export async function reverseReserveAddition(id: number, reason: string): Promise<ReserveResult> {
+  await requireFinance();
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Addition not found." };
+  const why = reason.trim();
+  if (why.length < 3) return { ok: false, error: "Say why it's being reversed." };
+  if (why.length > 280) return { ok: false, error: "Keep the reason under 280 characters." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reverse_reserve_addition", { p_id: id, p_reason: why });
+  if (error) {
+    if (["P0001", "P0002", "42501"].includes(error.code ?? "")) return { ok: false, error: error.message };
+    console.error("reserve reversal failed", { code: error.code });
     return { ok: false, error: "That couldn't be saved. Try again." };
   }
   revalidatePath("/reserve");

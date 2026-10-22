@@ -13,7 +13,7 @@ export default async function InactivePage() {
     <main className="grid min-h-dvh place-items-center p-6 text-center">
       <div className="max-w-sm">
         <h1 className="font-serif text-3xl font-semibold">Your account isn&apos;t active</h1>
-        <p className="mt-2 text-ink-soft">Ask a New Normal admin to set up or reactivate your account.</p>
+        <p className="mt-2 text-ink-soft">Ask a Normal admin to set up or reactivate your account.</p>
         <form action="/auth/signout" method="post" className="mt-6">
           <Button type="submit" variant="outline">Sign out</Button>
         </form>

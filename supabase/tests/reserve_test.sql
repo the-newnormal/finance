@@ -59,14 +59,15 @@ select is_empty($$ select 1 from public.reserve_additions $$, 'nor see its addit
 select pg_temp.login('0b100000-0000-4000-8000-000000000001');
 select throws_ok($$ select public.add_to_reserve(100, null, 'x') $$, 'P0001', 'Add a note saying where the funds come from.',
   'an addition needs a note');
-select throws_ok($$ select public.add_to_reserve(0, null, 'R nothing') $$, 'P0001', 'Enter a valid amount.', 'and an amount');
+select throws_ok($$ select public.add_to_reserve(0, null, 'R nothing') $$, 'P0001', 'Enter a valid amount. Money leaves the reserve only through a claim or a loan.', 'and an amount');
 select lives_ok($$ select public.add_to_reserve(50000, null, 'R council grant') $$, 'Finance adds to the reserve');
-select lives_ok($$ select public.add_to_reserve(-5000, null, 'R correction') $$, 'and can correct it the other way');
+select throws_ok($$ select public.add_to_reserve(-5000, null, 'R correction') $$, 'P0001',
+  'Enter a valid amount. Money leaves the reserve only through a claim or a loan.', 'money never leaves it as a negative addition');
 select lives_ok($$ select pg_temp.claim('R fin claim') $$, 'Finance claims against the reserve');
 select results_eq($$ select status::text, division_id from public.claims where description = 'R fin claim' $$,
   $$ values ('pending_finance', null::uuid) $$, 'the claim goes to Finance and belongs to no division');
 select results_eq($$ select funded_cents, pending_cents from public.budget_totals where is_reserve $$,
-  $$ values (45000::bigint, 3000::bigint) $$, 'its funds are the sum of additions, and claims count against them');
+  $$ values (50000::bigint, 3000::bigint) $$, 'its funds are the sum of additions, and claims count against them');
 select throws_ok($$ select public.save_budget(pg_temp.reserve(), 'Reserve', 'general', null, true, '[]') $$,
   'P0001', 'The reserve takes every category and has no guidelines, so there is nothing to set up.',
   'the reserve isn''t set up like other budgets');

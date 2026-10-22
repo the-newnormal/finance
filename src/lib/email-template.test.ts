@@ -47,7 +47,7 @@ describe("renderEmail", () => {
       "Reason: The receipt is \"blurry\" & cut off.",
       "You're welcome to submit a new claim with the corrections.",
       "View claim: https://finance.test/claims/c1",
-      "You're getting this because you have a New Normal Finance account.",
+      "You're getting this because you have a Normal Finance account.",
     ].join("\n\n"));
   });
 });

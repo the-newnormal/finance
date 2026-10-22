@@ -36,7 +36,7 @@ export function ClaimsTable({ claims, showClaimant = false, empty }: { claims: C
               <div className="line-clamp-1 text-xs text-ink-soft">{c.description}</div>
             </TD>
             <TD className="whitespace-nowrap text-right tabular-nums">{formatSGD(c.amount_cents)}</TD>
-            <TD><StatusBadge status={c.status} /></TD>
+            <TD><StatusBadge status={c.status} kind={c.kind} /></TD>
           </tr>
         ))}
       </TBody>
