@@ -102,7 +102,7 @@ export function FundingForms({ budgetId, today, accounts, reserveAvailable, owed
         )}
         {action !== "assign" && (
           <Field label={action === "commit" ? "Grant committed (SGD)" : "Amount (SGD)"}>
-            <Input key={action} name="amount" inputMode="decimal" placeholder="0.00" required
+            <Input key={`${action}-${committed}`} name="amount" inputMode="decimal" placeholder="0.00" required
               defaultValue={action === "commit" ? (committed / 100).toFixed(2) : undefined} />
           </Field>
         )}
