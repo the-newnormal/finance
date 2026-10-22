@@ -16,6 +16,7 @@ const note = z.string().trim().min(3, "Add a note saying what this is").max(300)
 const fund = z.object({ budget, amount: z.string(), date, note });
 const grant = fund.extend({ account: z.string().uuid("Choose the bank account it arrived in") });
 const commitment = z.object({ budget, amount: z.string() });
+const linkedGrant = z.object({ budget, bankEntry: z.coerce.number().int().positive(), note });
 
 async function call(fn: string, args: Record<string, unknown>, budgetId: string, log: string): Promise<FundingResult> {
   const supabase = await createClient();
@@ -43,6 +44,15 @@ export async function recordGrant(raw: z.input<typeof grant>): Promise<FundingRe
   return call("record_grant",
     { p_budget: v.budget, p_account: v.account, p_amount_cents: cents, p_date: v.date, p_note: v.note },
     v.budget, "grant record failed");
+}
+
+/** Link an existing Bank-page grant without creating a duplicate bank entry. */
+export async function linkGrant(raw: z.input<typeof linkedGrant>): Promise<FundingResult> {
+  await requireFinance();
+  const parsed = linkedGrant.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const v = parsed.data;
+  return call("link_grant", { p_budget: v.budget, p_bank_entry: v.bankEntry, p_note: v.note }, v.budget, "grant link failed");
 }
 
 /** The reserve lends the budget money until its grant arrives. */

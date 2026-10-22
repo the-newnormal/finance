@@ -23,6 +23,11 @@
 alter table public.budgets add column grant_committed_cents bigint not null default 0
   check (grant_committed_cents >= 0 and grant_committed_cents <= 100000000000);
 
+-- Do not expose commitments through the ordinary budget table.  They are available through
+-- budget_totals, whose purview filter below is the funding visibility boundary.
+revoke select on public.budgets from authenticated;
+grant select (id, name, kind, division_id, active, created_at, is_reserve) on public.budgets to authenticated;
+
 create type public.budget_fund_kind as enum ('grant', 'loan', 'repayment');
 
 create table public.budget_funds (
@@ -50,6 +55,49 @@ create policy budget_funds_select on public.budget_funds for select to authentic
 
 -- Reserve additions are money in only, from now on. (NOT VALID: earlier corrections stay as they were.)
 alter table public.reserve_additions add constraint reserve_additions_money_in check (amount_cents > 0) not valid;
+
+-- Corrections are separate, audited entries: additions remain immutable and money-in only.
+create table public.reserve_addition_corrections (
+  id bigint generated always as identity primary key,
+  addition_id bigint not null references public.reserve_additions (id),
+  amount_cents bigint not null check (amount_cents > 0 and amount_cents <= 100000000000),
+  corrected_on date not null,
+  note text not null check (length(btrim(note)) between 3 and 300),
+  actor_id uuid references public.members (id) on delete set null,
+  actor_name text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.reserve_addition_corrections enable row level security;
+revoke all on public.reserve_addition_corrections from anon, authenticated;
+grant select on public.reserve_addition_corrections to authenticated;
+create policy reserve_addition_corrections_finance on public.reserve_addition_corrections
+  for select to authenticated using (private.is_finance());
+
+create function public.correct_reserve_addition(p_addition_id bigint, p_amount_cents bigint,
+  p_date date, p_note text) returns bigint language plpgsql security definer set search_path = '' as $$
+declare
+  v_me public.members := private.finance_me();
+  v_addition public.reserve_additions;
+  v_corrected bigint;
+  v_id bigint;
+begin
+  select * into v_addition from public.reserve_additions where id = p_addition_id for update;
+  if v_addition.id is null then raise exception 'That reserve addition was not found.'; end if;
+  if p_amount_cents is null or p_amount_cents <= 0 then raise exception 'Enter a valid correction amount.'; end if;
+  select coalesce(sum(amount_cents), 0) into v_corrected
+    from public.reserve_addition_corrections where addition_id = p_addition_id;
+  if p_amount_cents > v_addition.amount_cents - v_corrected then
+    raise exception 'The correction is larger than the remaining addition.';
+  end if;
+  if coalesce(p_date, private.sg_today()) > private.sg_today() then raise exception 'The date can''t be in the future.'; end if;
+  if length(btrim(coalesce(p_note, ''))) < 3 then raise exception 'Add a note explaining the correction.'; end if;
+  insert into public.reserve_addition_corrections (addition_id, amount_cents, corrected_on, note, actor_id, actor_name)
+  values (p_addition_id, p_amount_cents, coalesce(p_date, private.sg_today()), left(btrim(p_note), 300), v_me.id, v_me.name)
+  returning id into v_id;
+  return v_id;
+end $$;
+revoke all on function public.correct_reserve_addition(bigint, bigint, date, text) from public, anon;
+grant execute on function public.correct_reserve_addition(bigint, bigint, date, text) to authenticated;
 
 create or replace function public.add_to_reserve(p_amount_cents bigint, p_date date, p_note text)
 returns bigint language plpgsql security definer set search_path = '' as $$
@@ -97,6 +145,7 @@ $$;
 create function private.reserve_available() returns bigint
 language sql stable security definer set search_path = '' as $$
   select coalesce((select sum(r.amount_cents) from public.reserve_additions r), 0)
+       - coalesce((select sum(x.amount_cents) from public.reserve_addition_corrections x), 0)
        - coalesce((select sum(c.amount_cents) from public.claims c join public.budgets b on b.id = c.budget_id
                    where b.is_reserve and c.status in ('approved', 'paid')), 0)
        - coalesce((select sum(case f.kind when 'loan' then f.amount_cents else -f.amount_cents end)
@@ -151,6 +200,26 @@ begin
     raise exception 'Enter a valid amount.';
   end if;
   update public.budgets b set grant_committed_cents = p_cents where b.id = v_budget.id;
+end $$;
+
+-- Link a grant already entered in the Bank ledger (including grants from before this migration).
+-- This credits the budget without creating a second bank entry.
+create function public.link_grant(p_budget uuid, p_bank_entry bigint, p_note text)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare
+  v_me public.members := private.finance_me();
+  v_budget public.budgets := private.fundable_budget(p_budget);
+  v_entry public.bank_entries;
+  v_id bigint;
+begin
+  select * into v_entry from public.bank_entries where id = p_bank_entry for update;
+  if v_entry.id is null or v_entry.kind <> 'grant' then raise exception 'Choose an unlinked grant bank entry.'; end if;
+  if exists (select 1 from public.budget_funds where bank_entry_id = v_entry.id) then raise exception 'That grant is already linked to a budget.'; end if;
+  perform private.check_fund(v_entry.amount_cents, v_entry.entry_date, p_note);
+  insert into public.budget_funds (budget_id, kind, amount_cents, entry_date, note, bank_entry_id, actor_id, actor_name)
+  values (v_budget.id, 'grant', v_entry.amount_cents, v_entry.entry_date, left(btrim(p_note), 300), v_entry.id, v_me.id, v_me.name)
+  returning id into v_id;
+  return v_id;
 end $$;
 
 -- Grant monies arrive: a 'grant' entry on the bank account, and a grant on the budget, together.
@@ -232,10 +301,12 @@ begin
 end $$;
 
 revoke all on function public.set_grant_commitment(uuid, bigint),
+  public.link_grant(uuid, bigint, text),
   public.record_grant(uuid, uuid, bigint, date, text),
   public.loan_from_reserve(uuid, bigint, date, text),
   public.repay_reserve(uuid, bigint, date, text) from public, anon;
 grant execute on function public.set_grant_commitment(uuid, bigint),
+  public.link_grant(uuid, bigint, text),
   public.record_grant(uuid, uuid, bigint, date, text),
   public.loan_from_reserve(uuid, bigint, date, text),
   public.repay_reserve(uuid, bigint, date, text) to authenticated;
@@ -259,7 +330,7 @@ create trigger bank_entries_sync_grant after update on public.bank_entries
 --   available_cents        what the budget (or the reserve) can still spend
 --   lent_out_cents         the reserve only: loans out, not yet repaid
 -- ---------------------------------------------------------------------------------------------
-create or replace view public.budget_totals with (security_invoker = true) as
+create or replace view public.budget_totals with (security_invoker = false) as
 select
   b.id as budget_id, b.name, b.kind, b.division_id, b.active,
   coalesce(g.guideline_cents, 0)::bigint as guideline_cents,
@@ -267,13 +338,15 @@ select
   coalesce(c.approved_cents, 0)::bigint as approved_cents,
   coalesce(c.paid_cents, 0)::bigint as paid_cents,
   b.is_reserve,
-  case when b.is_reserve then coalesce((select sum(r.amount_cents) from public.reserve_additions r), 0) else 0 end::bigint as funded_cents,
+  case when b.is_reserve then coalesce((select sum(r.amount_cents) from public.reserve_additions r), 0)
+       - coalesce((select sum(x.amount_cents) from public.reserve_addition_corrections x), 0) else 0 end::bigint as funded_cents,
   b.grant_committed_cents,
   coalesce(f.granted_cents, 0)::bigint as granted_cents,
   coalesce(f.loaned_cents, 0)::bigint as loaned_cents,
   coalesce(f.repaid_cents, 0)::bigint as repaid_cents,
   (case when b.is_reserve
-        then coalesce((select sum(r.amount_cents) from public.reserve_additions r), 0) - coalesce(o.lent_out_cents, 0)
+        then coalesce((select sum(r.amount_cents) from public.reserve_additions r), 0)
+       - coalesce((select sum(x.amount_cents) from public.reserve_addition_corrections x), 0) - coalesce(o.lent_out_cents, 0)
         else coalesce(f.granted_cents, 0) + coalesce(f.loaned_cents, 0) - coalesce(f.repaid_cents, 0) end
    - coalesce(c.approved_cents, 0) - coalesce(c.paid_cents, 0))::bigint as available_cents,
   case when b.is_reserve then coalesce(o.lent_out_cents, 0) else 0 end::bigint as lent_out_cents
