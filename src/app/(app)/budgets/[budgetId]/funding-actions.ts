@@ -16,6 +16,7 @@ const note = z.string().trim().min(3, "Add a note saying what this is").max(300)
 const fund = z.object({ budget, amount: z.string(), date, note });
 const grant = fund.extend({ account: z.string().uuid("Choose the bank account it arrived in") });
 const commitment = z.object({ budget, amount: z.string() });
+const assignment = z.object({ budget, entry: z.coerce.number().int().positive("Choose a grant from the bank ledger"), note });
 
 async function call(fn: string, args: Record<string, unknown>, budgetId: string, log: string): Promise<FundingResult> {
   const supabase = await createClient();
@@ -28,7 +29,7 @@ async function call(fn: string, args: Record<string, unknown>, budgetId: string,
   revalidatePath(`/budgets/${budgetId}`);
   revalidatePath("/budgets");
   revalidatePath("/reserve");
-  if (fn === "record_grant") revalidatePath("/bank");
+  if (fn === "record_grant" || fn === "assign_grant") revalidatePath("/bank");
   return { ok: true };
 }
 
@@ -74,4 +75,13 @@ export async function setGrantCommitment(raw: z.input<typeof commitment>): Promi
   const cents = parseBudgetToCents(v.amount);
   if (cents === null) return { ok: false, error: "Enter a valid amount, e.g. 5000.00." };
   return call("set_grant_commitment", { p_budget: v.budget, p_cents: cents }, v.budget, "grant commitment failed");
+}
+
+/** A grant already recorded on the Bank page, assigned to this budget whole. */
+export async function assignGrant(raw: z.input<typeof assignment>): Promise<FundingResult> {
+  await requireFinance();
+  const parsed = assignment.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const v = parsed.data;
+  return call("assign_grant", { p_bank_entry: v.entry, p_budget: v.budget, p_note: v.note }, v.budget, "grant assignment failed");
 }

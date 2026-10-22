@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
-import { addToReserve } from "./actions";
+import { addToReserve, reverseReserveAddition } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireFinance: vi.fn(async () => ({ id: "me", role: "finance" })) }));
@@ -42,5 +42,23 @@ describe("addToReserve", () => {
     rpc.mockResolvedValueOnce({ error: { code: "XX000", message: "detail" } });
     expect(await addToReserve(ok)).toEqual({ ok: false, error: "That couldn't be saved. Try again." });
     expect(console.error).toHaveBeenCalledWith("reserve addition failed", { code: "XX000" });
+  });
+});
+
+describe("reverseReserveAddition", () => {
+  it("reverses an addition with a reason", async () => {
+    expect(await reverseReserveAddition(7, " Entered twice ")).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("reverse_reserve_addition", { p_id: 7, p_reason: "Entered twice" });
+  });
+
+  it("needs a reason and a real id", async () => {
+    expect(await reverseReserveAddition(7, "x")).toEqual({ ok: false, error: "Say why it's being reversed." });
+    expect(await reverseReserveAddition(0, "Entered twice")).toEqual({ ok: false, error: "Addition not found." });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("shows the database's message", async () => {
+    rpc.mockResolvedValueOnce({ error: { code: "P0001", message: "This addition has already been reversed." } });
+    expect(await reverseReserveAddition(7, "Entered twice")).toEqual({ ok: false, error: "This addition has already been reversed." });
   });
 });

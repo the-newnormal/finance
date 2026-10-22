@@ -11,7 +11,7 @@ import { formatDate, formatSGD } from "@/lib/money";
 import { requireReviewer } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import { FUND_KIND_LABEL, isFinance, type BudgetFund, type BudgetTotals, type GuidelineTotals } from "@/lib/types";
-import { FundingForms, type FundingAccount } from "./funding-forms";
+import { FundingForms, type FundingAccount, type UnassignedGrant } from "./funding-forms";
 
 export default async function BudgetPage({ params }: PageProps<"/budgets/[budgetId]">) {
   const { budgetId } = await params;
@@ -106,7 +106,8 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
               <CardHeader><CardTitle>Fund this budget</CardTitle></CardHeader>
               <CardContent>
                 <FundingForms budgetId={budget.budget_id} today={singaporeToday()} accounts={financeData.accounts}
-                  reserveAvailable={financeData.reserveAvailable} owed={owed} committed={committed} />
+                  reserveAvailable={financeData.reserveAvailable} owed={owed} committed={committed}
+                  unassignedGrants={financeData.unassignedGrants} />
               </CardContent>
             </Card>
           )}
@@ -147,14 +148,21 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
 
 // Finance's forms need the open bank accounts and what the reserve has to lend (both Finance only, RLS).
 async function financeReads(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const [accounts, reserve] = await Promise.all([
+  const [accounts, reserve, grants, assigned] = await Promise.all([
     supabase.from("bank_balances").select("account_id, name, bank, last4").eq("active", true).order("name"),
     supabase.from("budget_totals").select("available_cents").eq("is_reserve", true).maybeSingle<Pick<BudgetTotals, "available_cents">>(),
+    // Grants recorded on the Bank page that no budget has yet, to assign one to this budget.
+    fetchAll<UnassignedGrant>((from, to) =>
+      supabase.from("bank_entries").select("id, amount_cents, entry_date, note").eq("kind", "grant").order("id").range(from, to)),
+    fetchAll<{ bank_entry_id: number }>((from, to) =>
+      supabase.from("budget_funds").select("bank_entry_id").eq("kind", "grant").order("id").range(from, to)),
   ]);
+  const taken = new Set(assigned.map((f) => f.bank_entry_id));
   if (accounts.error) console.error("bank accounts read failed", { code: accounts.error.code });
   if (reserve.error) console.error("reserve read failed", { code: reserve.error.code });
   return {
     accounts: (accounts.data ?? []) as FundingAccount[],
     reserveAvailable: reserve.data ? Number(reserve.data.available_cents) : null,
+    unassignedGrants: grants.filter((g) => !taken.has(g.id)).reverse(),
   };
 }

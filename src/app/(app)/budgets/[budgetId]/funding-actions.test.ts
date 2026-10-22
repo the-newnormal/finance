@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { loanFromReserve, recordGrant, repayReserve, setGrantCommitment } from "./funding-actions";
+import { assignGrant, loanFromReserve, recordGrant, repayReserve, setGrantCommitment } from "./funding-actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireFinance: vi.fn(async () => ({ id: "me", role: "finance" })) }));
@@ -69,6 +69,20 @@ describe("setGrantCommitment", () => {
 
   it("refuses nonsense", async () => {
     expect(await setGrantCommitment({ budget, amount: "lots" })).toMatchObject({ ok: false });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("assignGrant", () => {
+  it("assigns a bank-page grant to the budget", async () => {
+    rpc.mockResolvedValue({ data: 1, error: null });
+    expect(await assignGrant({ budget: budget, entry: "12", note: "First tranche" })).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith("assign_grant", { p_bank_entry: 12, p_budget: budget, p_note: "First tranche" });
+  });
+
+  it("needs a grant and a note", async () => {
+    expect(await assignGrant({ budget: budget, entry: "", note: "First tranche" })).toMatchObject({ ok: false });
+    expect(await assignGrant({ budget: budget, entry: "12", note: "x" })).toMatchObject({ ok: false });
     expect(rpc).not.toHaveBeenCalled();
   });
 });

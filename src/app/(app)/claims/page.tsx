@@ -43,7 +43,7 @@ export default async function MyClaimsPage() {
       />
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <Stat label="Being reviewed" value={pending.total} sub={`${pending.count} claim${pending.count === 1 ? "" : "s"}`} />
-        <Stat label="Approved, to be reimbursed" value={toBePaid.total} sub={`${toBePaid.count} claim${toBePaid.count === 1 ? "" : "s"}`} />
+        <Stat label="Approved, awaiting disbursement" value={toBePaid.total} sub={`${toBePaid.count} claim${toBePaid.count === 1 ? "" : "s"}`} />
         <Stat label="Reimbursed to date" value={paid.total} />
       </div>
       <Card>

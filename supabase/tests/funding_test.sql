@@ -201,5 +201,39 @@ select throws_ok($$ insert into public.budget_funds (budget_id, kind, amount_cen
   values ('0c400000-0000-4000-8000-000000000001', 'loan', 100, current_date, 'F sneak', 'F Vol') $$,
   '42501', null, 'nobody writes budget_funds directly');
 
+-- ---------- review fixes: commitments, assigned grants, reversals, closed budgets ----------
+select pg_temp.login('0c100000-0000-4000-8000-000000000004');
+select is_empty($$ select 1 from public.budget_commitments $$, 'volunteers can''t read grant commitments');
+select pg_temp.login('0c100000-0000-4000-8000-000000000002');
+select isnt_empty($$ select 1 from public.budget_commitments where budget_id = '0c400000-0000-4000-8000-000000000001' $$,
+  'the division''s lead reads its commitment');
+
+select pg_temp.login('0c100000-0000-4000-8000-000000000001');
+-- A grant recorded on the Bank page, then assigned to a budget whole.
+select lives_ok($$ select public.record_bank_entry('0c500000-0000-4000-8000-000000000001', 'grant', 7000, null, 'F bank-page grant') $$,
+  'a grant is recorded on the Bank page');
+select lives_ok($$ select public.assign_grant(pg_temp.entry('F bank-page grant'), '0c400000-0000-4000-8000-000000000002', 'F tranche on bank page') $$,
+  'and assigned to a budget');
+select is((select granted_cents from public.budget_totals where budget_id = '0c400000-0000-4000-8000-000000000002'), 7000::bigint,
+  'the budget gets the whole grant');
+select throws_ok($$ select public.assign_grant(pg_temp.entry('F bank-page grant'), '0c400000-0000-4000-8000-000000000001', 'F twice') $$,
+  'P0001', 'That grant is already assigned to a budget.', 'a grant is assigned only once');
+
+-- An addition entered by mistake is reversed, once, with a reason.
+select lives_ok($$ select public.add_to_reserve(1234, null, 'F typo addition') $$, 'Finance adds to the reserve');
+select throws_ok($$ select public.reverse_reserve_addition((select id from public.reserve_additions where note = 'F typo addition'), 'x') $$,
+  'P0001', 'Say why it''s being reversed.', 'a reversal needs a reason');
+select lives_ok($$ select public.reverse_reserve_addition((select id from public.reserve_additions where note = 'F typo addition'), 'Entered by mistake') $$,
+  'and reverses a mistaken addition');
+select is((select amount_cents from public.reserve_additions where note = 'Reversal: Entered by mistake'), -1234::bigint,
+  'the reversal is the opposite amount');
+select throws_ok($$ select public.reverse_reserve_addition((select id from public.reserve_additions where note = 'F typo addition'), 'Again') $$,
+  'P0001', 'This addition has already been reversed.', 'an addition is reversed only once');
+
+-- No loans to a closed budget.
+update public.budgets set active = false where id = '0c400000-0000-4000-8000-000000000002';
+select throws_ok($$ select public.loan_from_reserve('0c400000-0000-4000-8000-000000000002', 100, null, 'F closed loan') $$,
+  'P0001', 'That budget is closed. Reopen it on the Setup page to lend to it.', 'closed budgets get no loans');
+
 select * from finish();
 rollback;

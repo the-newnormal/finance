@@ -39,3 +39,23 @@ export async function addToReserve(raw: z.input<typeof input>): Promise<ReserveR
   revalidatePath("/budgets");
   return { ok: true };
 }
+
+// Reverses an addition entered by mistake (reverse_reserve_addition): an entry of the opposite
+// amount that names it. A correction, not money leaving the reserve.
+export async function reverseReserveAddition(id: number, reason: string): Promise<ReserveResult> {
+  await requireFinance();
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Addition not found." };
+  const why = reason.trim();
+  if (why.length < 3) return { ok: false, error: "Say why it's being reversed." };
+  if (why.length > 280) return { ok: false, error: "Keep the reason under 280 characters." };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reverse_reserve_addition", { p_id: id, p_reason: why });
+  if (error) {
+    if (["P0001", "P0002", "42501"].includes(error.code ?? "")) return { ok: false, error: error.message };
+    console.error("reserve reversal failed", { code: error.code });
+    return { ok: false, error: "That couldn't be saved. Try again." };
+  }
+  revalidatePath("/reserve");
+  revalidatePath("/budgets");
+  return { ok: true };
+}

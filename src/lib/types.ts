@@ -174,6 +174,8 @@ export interface ReserveAddition {
   added_on: string;
   note: string;
   actor_name: string;
+  /** Set on a reversal: the addition it reverses (0010). */
+  reverses_id: number | null;
 }
 
 export interface ClaimEvent {

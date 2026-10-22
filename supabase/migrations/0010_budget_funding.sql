@@ -13,15 +13,25 @@
 --                         (edit_bank_entry) corrects the grant too.
 --   loan_from_reserve     the reserve lends a budget money until its grant arrives.
 --   repay_reserve         the budget pays its loans back once it can.
--- A budget also records the grant committed to it (grant_committed_cents), to show what's still due.
+-- A budget also records the grant committed to it (budget_commitments), to show what's still due.
+-- Grants already recorded on the Bank page can be assigned to a budget (assign_grant).
 --
 -- From now on money leaves the reserve only through a claim or a loan: additions to it must be
 -- positive (a mistake is corrected by a loan repaid, never a negative addition). Its available
 -- funds are its additions, less its approved and disbursed claims, less what it has lent and not
 -- had back. Claims are never blocked by a short balance: Finance is warned (src/app) instead.
 
-alter table public.budgets add column grant_committed_cents bigint not null default 0
-  check (grant_committed_cents >= 0 and grant_committed_cents <= 100000000000);
+-- Its own table, not a budgets column: every active member reads budgets (to claim), but
+-- commitments are funding figures, for the division's leads and Finance only.
+create table public.budget_commitments (
+  budget_id uuid primary key references public.budgets (id),
+  committed_cents bigint not null check (committed_cents >= 0 and committed_cents <= 100000000000)
+);
+alter table public.budget_commitments enable row level security;
+revoke all on public.budget_commitments from anon, authenticated;
+grant select on public.budget_commitments to authenticated;
+create policy budget_commitments_select on public.budget_commitments for select to authenticated
+  using (private.budget_in_purview(budget_id));
 
 create type public.budget_fund_kind as enum ('grant', 'loan', 'repayment');
 
@@ -48,8 +58,13 @@ grant select on public.budget_funds to authenticated;
 create policy budget_funds_select on public.budget_funds for select to authenticated
   using (private.budget_in_purview(budget_id));
 
--- Reserve additions are money in only, from now on. (NOT VALID: earlier corrections stay as they were.)
-alter table public.reserve_additions add constraint reserve_additions_money_in check (amount_cents > 0) not valid;
+-- Reserve additions are money in only, from now on, except a reversal: an addition entered by
+-- mistake is reversed (reverse_reserve_addition), with a reason, by an entry of the opposite
+-- amount that names it. That corrects the record; it isn't money leaving the reserve.
+-- (NOT VALID: earlier negative corrections stay as they were.)
+alter table public.reserve_additions add column reverses_id bigint unique references public.reserve_additions (id);
+alter table public.reserve_additions add constraint reserve_additions_money_in
+  check ((reverses_id is null and amount_cents > 0) or (reverses_id is not null and amount_cents < 0)) not valid;
 
 create or replace function public.add_to_reserve(p_amount_cents bigint, p_date date, p_note text)
 returns bigint language plpgsql security definer set search_path = '' as $$
@@ -72,6 +87,34 @@ begin
   returning id into v_id;
   return v_id;
 end $$;
+
+create function public.reverse_reserve_addition(p_id bigint, p_reason text)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare
+  v_me public.members := private.finance_me();
+  v_add public.reserve_additions;
+  v_id bigint;
+begin
+  if length(btrim(coalesce(p_reason, ''))) < 3 then
+    raise exception 'Say why it''s being reversed.';
+  end if;
+  select * into v_add from public.reserve_additions r where r.id = p_id for update;
+  if v_add.id is null then
+    raise exception 'Addition not found.' using errcode = 'P0002';
+  end if;
+  if v_add.amount_cents <= 0 or v_add.reverses_id is not null then
+    raise exception 'Only an addition can be reversed.';
+  end if;
+  if exists (select 1 from public.reserve_additions r where r.reverses_id = p_id) then
+    raise exception 'This addition has already been reversed.';
+  end if;
+  insert into public.reserve_additions (amount_cents, added_on, note, actor_id, actor_name, reverses_id)
+  values (-v_add.amount_cents, private.sg_today(), left('Reversal: ' || btrim(p_reason), 300), v_me.id, v_me.name, p_id)
+  returning id into v_id;
+  return v_id;
+end $$;
+revoke all on function public.reverse_reserve_addition(bigint, text) from public, anon;
+grant execute on function public.reverse_reserve_addition(bigint, text) to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
 -- Balances. Each function locks what it reads FOR UPDATE, so two loans (or two repayments) can't
@@ -150,7 +193,8 @@ begin
   if p_cents is null or p_cents < 0 or p_cents > 100000000000 then
     raise exception 'Enter a valid amount.';
   end if;
-  update public.budgets b set grant_committed_cents = p_cents where b.id = v_budget.id;
+  insert into public.budget_commitments (budget_id, committed_cents) values (v_budget.id, p_cents)
+  on conflict (budget_id) do update set committed_cents = excluded.committed_cents;
 end $$;
 
 -- Grant monies arrive: a 'grant' entry on the bank account, and a grant on the budget, together.
@@ -176,6 +220,32 @@ begin
   return v_id;
 end $$;
 
+-- A grant already recorded on the Bank page (a 'grant' entry not yet on any budget) is assigned to a
+-- budget, whole: its amount and date come from the bank entry.
+create function public.assign_grant(p_bank_entry bigint, p_budget uuid, p_note text)
+returns bigint language plpgsql security definer set search_path = '' as $$
+declare
+  v_me public.members := private.finance_me();
+  v_budget public.budgets := private.fundable_budget(p_budget);
+  v_entry public.bank_entries;
+  v_id bigint;
+begin
+  select * into v_entry from public.bank_entries e where e.id = p_bank_entry for update;
+  if v_entry.id is null or v_entry.kind <> 'grant' then
+    raise exception 'Choose a grant from the bank ledger.' using errcode = 'P0002';
+  end if;
+  if exists (select 1 from public.budget_funds f where f.bank_entry_id = v_entry.id) then
+    raise exception 'That grant is already assigned to a budget.';
+  end if;
+  if length(btrim(coalesce(p_note, ''))) < 3 then
+    raise exception 'Add a note saying what this is.';
+  end if;
+  insert into public.budget_funds (budget_id, kind, amount_cents, entry_date, note, bank_entry_id, actor_id, actor_name)
+  values (v_budget.id, 'grant', v_entry.amount_cents, v_entry.entry_date, left(btrim(p_note), 300), v_entry.id, v_me.id, v_me.name)
+  returning id into v_id;
+  return v_id;
+end $$;
+
 -- The reserve lends a budget money. Refused if the reserve doesn't have it available.
 create function public.loan_from_reserve(p_budget uuid, p_amount_cents bigint, p_date date, p_note text)
 returns bigint language plpgsql security definer set search_path = '' as $$
@@ -189,6 +259,9 @@ begin
   -- The reserve first, so every loan waits for the one before it.
   perform 1 from public.budgets b where b.is_reserve for update;
   v_budget := private.fundable_budget(p_budget);
+  if not v_budget.active then
+    raise exception 'That budget is closed. Reopen it on the Setup page to lend to it.';
+  end if;
   perform private.check_fund(p_amount_cents, v_date, p_note);
   v_available := private.reserve_available();
   if p_amount_cents > v_available then
@@ -233,10 +306,12 @@ end $$;
 
 revoke all on function public.set_grant_commitment(uuid, bigint),
   public.record_grant(uuid, uuid, bigint, date, text),
+  public.assign_grant(bigint, uuid, text),
   public.loan_from_reserve(uuid, bigint, date, text),
   public.repay_reserve(uuid, bigint, date, text) from public, anon;
 grant execute on function public.set_grant_commitment(uuid, bigint),
   public.record_grant(uuid, uuid, bigint, date, text),
+  public.assign_grant(bigint, uuid, text),
   public.loan_from_reserve(uuid, bigint, date, text),
   public.repay_reserve(uuid, bigint, date, text) to authenticated;
 
@@ -244,6 +319,9 @@ grant execute on function public.set_grant_commitment(uuid, bigint),
 create function private.bank_entries_sync_grant() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
+  -- The budget's row first, as repay_reserve takes it: a repayment checking the old grant waits.
+  perform 1 from public.budgets b join public.budget_funds f on f.budget_id = b.id
+   where f.bank_entry_id = new.id for update of b;
   update public.budget_funds f set amount_cents = new.amount_cents, entry_date = new.entry_date
    where f.bank_entry_id = new.id and (f.amount_cents, f.entry_date) is distinct from (new.amount_cents, new.entry_date);
   return null;
@@ -268,7 +346,7 @@ select
   coalesce(c.paid_cents, 0)::bigint as paid_cents,
   b.is_reserve,
   case when b.is_reserve then coalesce((select sum(r.amount_cents) from public.reserve_additions r), 0) else 0 end::bigint as funded_cents,
-  b.grant_committed_cents,
+  coalesce((select bc.committed_cents from public.budget_commitments bc where bc.budget_id = b.id), 0)::bigint as grant_committed_cents,
   coalesce(f.granted_cents, 0)::bigint as granted_cents,
   coalesce(f.loaned_cents, 0)::bigint as loaned_cents,
   coalesce(f.repaid_cents, 0)::bigint as repaid_cents,

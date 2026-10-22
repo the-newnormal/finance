@@ -96,7 +96,9 @@ from unnest(array['public.add_member(uuid, text, text, public.member_role, uuid[
                   'public.set_grant_commitment(uuid, bigint)',
                   'public.record_grant(uuid, uuid, bigint, date, text)',
                   'public.loan_from_reserve(uuid, bigint, date, text)',
-                  'public.repay_reserve(uuid, bigint, date, text)']) f;
+                  'public.repay_reserve(uuid, bigint, date, text)',
+                  'public.assign_grant(bigint, uuid, text)',
+                  'public.reverse_reserve_addition(bigint, text)']) f;
 
 -- The private helpers are unreachable for anon, and the trigger functions for everyone.
 select ok(not has_function_privilege('anon', p.oid, 'execute'), format('anon: no execute on %s', p.oid::regprocedure))

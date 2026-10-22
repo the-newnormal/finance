@@ -11,6 +11,7 @@ import { requireFinance } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
 import type { BudgetTotals, ReserveAddition } from "@/lib/types";
 import { ReserveForm } from "./reserve-form";
+import { ReverseButton } from "./reverse-button";
 
 export const metadata = { title: "Reserve" };
 
@@ -25,7 +26,7 @@ export default async function ReservePage() {
 
   const [additions, claims, budgets] = await Promise.all([
     fetchAll<ReserveAddition>((from, to) =>
-      supabase.from("reserve_additions").select("id, amount_cents, added_on, note, actor_name").order("id").range(from, to)),
+      supabase.from("reserve_additions").select("id, amount_cents, added_on, note, actor_name, reverses_id").order("id").range(from, to)),
     fetchAll((from, to) =>
       supabase.from("claims").select(ROW_COLUMNS).eq("budget_id", reserve.budget_id).order("created_at").order("id").range(from, to),
     ).then(withNames),
@@ -36,6 +37,7 @@ export default async function ReservePage() {
     .map((b) => ({ id: b.budget_id, name: b.name, owed: Number(b.loaned_cents) - Number(b.repaid_cents) }))
     .filter((b) => b.owed > 0)
     .sort((a, b) => b.owed - a.owed || a.name.localeCompare(b.name));
+  const reversed = new Set(additions.map((a) => a.reverses_id).filter((x): x is number => x !== null));
   additions.reverse(); // read oldest first (stable paging), show newest first
   claims.reverse();
 
@@ -95,7 +97,7 @@ export default async function ReservePage() {
                 <p className="px-1 py-8 text-center text-sm text-ink-soft">Nothing added yet.</p>
               ) : (
                 <Table>
-                  <THead><tr><TH>Date</TH><TH>Note</TH><TH>By</TH><TH className="text-right">Amount</TH></tr></THead>
+                  <THead><tr><TH>Date</TH><TH>Note</TH><TH>By</TH><TH className="text-right">Amount</TH><TH /></tr></THead>
                   <TBody>
                     {additions.map((a) => (
                       <tr key={a.id}>
@@ -103,6 +105,10 @@ export default async function ReservePage() {
                         <TD className="min-w-40">{a.note}</TD>
                         <TD className="whitespace-nowrap">{a.actor_name}</TD>
                         <TD className={`whitespace-nowrap text-right tabular-nums ${a.amount_cents < 0 ? "text-danger" : ""}`}>{formatSGD(Number(a.amount_cents))}</TD>
+                        <TD className="text-right">
+                          {a.amount_cents > 0 && !a.reverses_id && !reversed.has(a.id) && <ReverseButton id={a.id} />}
+                          {reversed.has(a.id) && <span className="text-xs text-ink-soft">Reversed</span>}
+                        </TD>
                       </tr>
                     ))}
                   </TBody>
