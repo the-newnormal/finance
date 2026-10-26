@@ -16,7 +16,7 @@ export async function setPassword(password: string, confirm: string): Promise<Pa
   await requireMember();
   if (password !== confirm) return { ok: false, error: "The two passwords don't match." };
   if (password.length < MIN) return { ok: false, error: `Use at least ${MIN} characters.` };
-  if (new TextEncoder().encode(password).length > MAX_BYTES) return { ok: false, error: "Use a shorter password (at most 72 characters)." };
+  if (new TextEncoder().encode(password).length > MAX_BYTES) return { ok: false, error: "That password is too long. Use fewer characters (accented letters and emoji count extra)." };
 
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
