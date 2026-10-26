@@ -74,7 +74,8 @@ describe("GET /api/export", () => {
     rows.claims = [
       { ...claim("a", "2026-01-05T02:00:00Z"), amount_cents: 2180, items: [
         { description: "Water", amount_cents: 1200, category_id: "c2" },
-        { description: "Taxi", amount_cents: 800, category_id: null },
+        { description: "Taxi", amount_cents: 900, category_id: null },
+        { description: "Discount", amount_cents: -100, category_id: null },
       ] },
       claim("b", "2026-02-05T02:00:00Z"),
     ];
@@ -82,10 +83,12 @@ describe("GET /api/export", () => {
     expect(res.headers.get("Content-Disposition")).toContain("nn-items-");
     const [header, ...lines] = (await res.text()).split("\r\n");
     expect(header).toBe('"claim_id","submitted","kind","status","claimant","budget","paid_on","item","item_amount_sgd","category_group","category","spend_sgd"');
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toContain('"(not itemised)","","Operations & Admin","Transport & Logistics","15.00"');
     expect(lines[1]).toContain('"Water","12.00","Programme","F&B – Participants","13.08"');
-    expect(lines[2]).toContain('"Taxi","8.00","Operations & Admin","Transport & Logistics","8.72"');
+    expect(lines[2]).toContain('"Taxi","9.00","Operations & Admin","Transport & Logistics","9.81"');
+    // A discount stays a number, so a column's sum still adds up to the claim.
+    expect(lines[3]).toContain('"Discount","-1.00","Operations & Admin","Transport & Logistics","-1.09"');
   });
 
   it("refuses a malformed filter instead of exporting the wrong claims", async () => {

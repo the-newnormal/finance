@@ -166,11 +166,23 @@ describe("ClaimForm", () => {
     expect(precheckClaim).not.toHaveBeenCalled();
   });
 
-  it("says when a file couldn't be uploaded, and leaves it out", async () => {
+  it("says when a file couldn't be uploaded, leaves it out, and clears the message when a retry works", async () => {
     upload.mockResolvedValue({ error: { message: "offline" } });
     await attach(fileInputs()[0], "receipt.jpg");
     expect(el.textContent).toContain("receipt.jpg couldn't be uploaded");
     expect(el.querySelector('[aria-label="Remove receipt.jpg"]')).toBeNull();
+    upload.mockResolvedValue({ error: null });
+    await attach(fileInputs()[0], "receipt.jpg");
+    expect(el.textContent).not.toContain("couldn't be uploaded");
+    expect(el.querySelector('[aria-label="Remove receipt.jpg"]')).not.toBeNull();
+  });
+
+  it("lets files be attached again after something unexpected goes wrong", async () => {
+    vi.mocked(createClient).mockImplementationOnce(() => { throw new Error("no Supabase settings"); });
+    await attach(fileInputs()[0], "receipt.jpg");
+    expect(el.textContent).toContain("The files couldn't be attached. Try again.");
+    expect(fileInputs()[0].disabled).toBe(false);
+    expect(submitButton().disabled).toBe(false);
   });
 
   it("uploads a HEIC photo as a JPEG, even when the browser gives it no type", async () => {

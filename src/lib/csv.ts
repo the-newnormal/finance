@@ -1,6 +1,6 @@
-/** Quotes a CSV cell, and defuses spreadsheet formulas (CSV injection). */
+/** Quotes a CSV cell, and defuses spreadsheet formulas (CSV injection); a plain negative number stays a number. */
 export function csvCell(v: string) {
-  const safe = /^[=+\-@\t\r\n]/.test(v) ? `'${v}` : v;
+  const safe = /^[=+\-@\t\r\n]/.test(v) && !/^-\d+(\.\d+)?$/.test(v) ? `'${v}` : v;
   return `"${safe.replace(/"/g, '""')}"`;
 }
 

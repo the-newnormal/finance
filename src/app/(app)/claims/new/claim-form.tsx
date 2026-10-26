@@ -102,25 +102,31 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
     const chosen = Array.from(list ?? []); // read now: the input is cleared once this returns
     if (!chosen.length) return;
     setAttaching(true);
-    const storage = createClient().storage.from("receipts");
-    const next = [...files];
-    for (const picked of chosen) {
-      if (next.length >= MAX_FILES) break;
-      let f: File;
-      try { f = await uploadable(picked); }
-      catch { setError(`${picked.name} couldn't be converted to a JPEG. Attach a screenshot of it instead.`); continue; }
-      if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
-      if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
-      // Straight into the private receipts bucket, in this member's own folder (storage RLS). Only
-      // letters, digits, _ - and single dots (the database refuses ".." in any path).
-      const safe = f.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
-      const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
-      const uploaded = await storage.upload(path, f, { contentType: f.type, upsert: false }).catch(() => null);
-      if (!uploaded || uploaded.error) { setError(`${f.name} couldn't be uploaded. Check your connection and try again.`); continue; }
-      next.push({ file: f, path, proof });
+    setError(null);
+    try {
+      const storage = createClient().storage.from("receipts");
+      const next = [...files];
+      for (const picked of chosen) {
+        if (next.length >= MAX_FILES) break;
+        let f: File;
+        try { f = await uploadable(picked); }
+        catch { setError(`${picked.name} couldn't be converted to a JPEG. Attach a screenshot of it instead.`); continue; }
+        if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
+        if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
+        // Straight into the private receipts bucket, in this member's own folder (storage RLS). Only
+        // letters, digits, _ - and single dots (the database refuses ".." in any path).
+        const safe = f.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
+        const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
+        const uploaded = await storage.upload(path, f, { contentType: f.type, upsert: false }).catch(() => null);
+        if (!uploaded || uploaded.error) { setError(`${f.name} couldn't be uploaded. Check your connection and try again.`); continue; }
+        next.push({ file: f, path, proof });
+      }
+      setFiles(next);
+    } catch {
+      setError("The files couldn't be attached. Try again.");
+    } finally {
+      setAttaching(false);
     }
-    setFiles(next);
-    setAttaching(false);
   }
 
   // Changing what is attached starts the files afresh, as TRP's form does: a file attached as one

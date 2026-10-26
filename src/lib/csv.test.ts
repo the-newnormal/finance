@@ -7,4 +7,8 @@ describe("csvCell", () => {
     expect(csvCell(v)).toBe(`"'${v}"`);
   });
   it("leaves ordinary text alone", () => expect(csvCell("Taxi")).toBe('"Taxi"'));
+  it("leaves a plain negative number a number", () => {
+    expect(csvCell("-2.00")).toBe('"-2.00"');
+    expect(csvCell("-2")).toBe('"-2"');
+  });
 });
