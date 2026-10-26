@@ -67,7 +67,7 @@ export function PeopleManager({ people: users, divisions, meId }: { people: U[];
   const shown = users.filter((u) => (u.name + u.email).toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+    <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>{users.length} people</CardTitle>

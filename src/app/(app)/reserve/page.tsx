@@ -59,7 +59,8 @@ export default async function ReservePage() {
             <div className="font-serif text-3xl font-semibold tabular-nums">{formatSGD(lent)}</div>
           </div>
         </div>
-        <BudgetBar allocated={funded} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
+        {/* Loans out aren't the reserve's to spend until repaid, so the bar measures what's left of the rest. */}
+        <BudgetBar allocated={funded - Number(reserve.lent_out_cents)} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
         <p className="mt-3 text-xs text-ink-soft">
           {formatSGD(funded)} added in total{Number(reserve.pending_cents) > 0 && ` · ${formatSGD(Number(reserve.pending_cents))} awaiting approval`}.
           Money leaves the reserve only through a claim or a loan to a budget. Claim against it by choosing <strong>Reserve</strong> as the budget on a new claim; lend to a budget from that budget&rsquo;s page.
@@ -84,7 +85,7 @@ export default async function ReservePage() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid content-start gap-6">
           <Card>
             <CardHeader><CardTitle>Claims</CardTitle></CardHeader>

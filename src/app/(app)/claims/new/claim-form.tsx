@@ -207,7 +207,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   ];
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+    <form ref={formRef} onSubmit={onSubmit} className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_380px]">
       {/* Locked while submitting: what is sent is what is on screen. */}
       <fieldset disabled={busy} className="grid min-w-0 content-start gap-6">
         {canInvoice && (

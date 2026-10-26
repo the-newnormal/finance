@@ -53,7 +53,7 @@ export default async function BudgetsPage() {
                 <div className="text-xs text-ink-soft">in reserve{Number(reserve.lent_out_cents) > 0 && ` · ${formatSGD(Number(reserve.lent_out_cents))} on loan`}</div>
               </div>
             </div>
-            <BudgetBar allocated={Number(reserve.funded_cents)} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
+            <BudgetBar allocated={Number(reserve.funded_cents) - Number(reserve.lent_out_cents)} committed={Number(reserve.approved_cents)} spent={Number(reserve.paid_cents)} />
           </Card>
         </Link>
       )}

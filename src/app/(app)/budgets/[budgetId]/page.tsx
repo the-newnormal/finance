@@ -60,7 +60,7 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
         <BudgetBar allocated={Number(budget.guideline_cents)} committed={Number(budget.approved_cents)} spent={Number(budget.paid_cents)} />
       </Card>
       {!budget.is_reserve && (
-        <div className="mb-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="mb-6 grid gap-6 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_360px]">
           <Card className="content-start">
             <CardHeader>
               <CardTitle>Funding</CardTitle>
@@ -113,7 +113,7 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
           )}
         </div>
       )}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader><CardTitle>Claims</CardTitle></CardHeader>
           <CardContent><ClaimsTable claims={claims} showClaimant empty="No claims against this budget yet." /></CardContent>
