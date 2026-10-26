@@ -7,8 +7,8 @@ import { SetupManager } from "./setup-manager";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("./actions", () => ({
-  addCategory: vi.fn(), addDivision: vi.fn(), deleteClaimRule: vi.fn(), saveBudget: vi.fn(), saveClaimRule: vi.fn(),
-  setBudgetActive: vi.fn(), setCategoryActive: vi.fn(), setCategoryGroup: vi.fn(async () => ({ ok: true })), setClaimRuleActive: vi.fn(),
+  addCategory: vi.fn(), addDivision: vi.fn(), saveBudget: vi.fn(),
+  setBudgetActive: vi.fn(), setCategoryActive: vi.fn(), setCategoryGroup: vi.fn(async () => ({ ok: true })),
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,7 +21,7 @@ beforeEach(async () => {
   document.body.append(el);
   root = createRoot(el);
   await act(async () => root.render(
-    <SetupManager divisions={[]} budgets={[]} rules={[]} categories={[
+    <SetupManager divisions={[]} budgets={[]} categories={[
       { id: "c1", name: "Transport & Logistics", active: true, category_group: "operations" },
       { id: "c2", name: "Logistics", active: true, category_group: null },
       { id: "c3", name: "Venue & Rental", active: true, category_group: "venue_production" },
