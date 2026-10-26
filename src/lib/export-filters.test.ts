@@ -9,14 +9,14 @@ describe("parseExportFilters", () => {
   it("exports everything when nothing is chosen (blank fields included)", () => {
     for (const q of ["", "from=&to=&division=&budget=&status="]) {
       expect(parse(q)).toEqual({
-        ok: true, filters: { from: null, to: null, dates: "submitted", divisionId: null, budgetId: null, status: null },
+        ok: true, filters: { rows: "claims", from: null, to: null, dates: "submitted", divisionId: null, budgetId: null, status: null },
       });
     }
   });
 
   it("reads every filter", () => {
-    expect(parse(`from=2026-01-01&to=2026-03-31&dates=paid&division=${DIV}&budget=${BUDGET}&status=paid`)).toEqual({
-      ok: true, filters: { from: "2026-01-01", to: "2026-03-31", dates: "paid", divisionId: DIV, budgetId: BUDGET, status: "paid" },
+    expect(parse(`rows=items&from=2026-01-01&to=2026-03-31&dates=paid&division=${DIV}&budget=${BUDGET}&status=paid`)).toEqual({
+      ok: true, filters: { rows: "items", from: "2026-01-01", to: "2026-03-31", dates: "paid", divisionId: DIV, budgetId: BUDGET, status: "paid" },
     });
   });
 

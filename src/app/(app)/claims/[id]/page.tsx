@@ -3,8 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Alert } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TBody, TD, TH, THead } from "@/components/ui/table";
 import QRCode from "qrcode";
+import type { ClaimItem } from "@/lib/claim-items";
 import { hiddenBudgetName } from "@/lib/claims";
 import { decryptPayout, type PayoutDetails } from "@/lib/crypto";
 import { formatDate, formatSGD } from "@/lib/money";
@@ -91,6 +93,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
     : { data: [], error: null };
   if (accountsError) throw new Error(`bank accounts read failed: ${accountsError.code}`);
   const shortfall = may.seePayout ? await fundingShortfall(supabase, claim) : null;
+  const items = await claimItems(supabase, claim.id);
 
   return (
     <>
@@ -163,6 +166,29 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
               {may.attach && <AttachFiles claimId={claim.id} uid={me.id} room={5 - claim.attachment_paths.length} />}
             </CardContent>
           </Card>
+
+          {items.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>What was bought</CardTitle>
+                <CardDescription>Read from the receipts by AI as they were attached. Amounts are as printed, before any tax or service charge: check them against the receipts.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <THead><tr><TH>Item</TH><TH>Category</TH><TH className="text-right">Amount</TH></tr></THead>
+                  <TBody>
+                    {items.map((i, n) => (
+                      <tr key={n}>
+                        <TD>{i.description}</TD>
+                        <TD className="text-ink-soft">{i.category ?? "—"}</TD>
+                        <TD className="text-right tabular-nums">{i.amount_cents === null ? "—" : formatSGD(i.amount_cents)}</TD>
+                      </tr>
+                    ))}
+                  </TBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="grid content-start gap-6">
@@ -247,6 +273,18 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
       </div>
     </>
   );
+}
+
+// What the claim bought (0012), with each item's category by name; none if it lists none. Advice for
+// whoever reads the claim, so if it can't be read the page goes on without it.
+async function claimItems(supabase: Awaited<ReturnType<typeof createClient>>, claimId: string) {
+  const { data, error } = await supabase.from("claims").select("items").eq("id", claimId).maybeSingle();
+  if (error) console.error("claim items read failed", { code: error.code });
+  const items: ClaimItem[] = Array.isArray(data?.items) ? data.items : [];
+  const ids = [...new Set(items.map((i) => i.category_id).filter((c): c is string => !!c))];
+  const { data: categories } = ids.length ? await supabase.from("categories").select("id, name").in("id", ids) : { data: [] };
+  const name = new Map((categories ?? []).map((c) => [c.id as string, c.name as string]));
+  return items.map((i) => ({ ...i, category: (i.category_id && name.get(i.category_id)) || null }));
 }
 
 function Item({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {

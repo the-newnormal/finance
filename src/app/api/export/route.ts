@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { fetchAll } from "@/lib/claims";
+import { shareAmount, type ClaimItem } from "@/lib/claim-items";
 import { csvCell } from "@/lib/csv";
 import { singaporeDate } from "@/lib/dates";
 import { inRange, nextDay, parseExportFilters, singaporeDayStart } from "@/lib/export-filters";
@@ -8,7 +9,9 @@ import { createClient } from "@/lib/supabase/server";
 import { CATEGORY_GROUP_LABEL, isFinance, type CategoryGroup } from "@/lib/types";
 
 // CSV of claims, for Finance: every claim, or those matching the filters (by submitted or paid
-// date, division, budget, status). Read as the signed-in user (RLS), and never payout details.
+// date, division, budget, status). Read as the signed-in user (RLS), and never payout details. One
+// row per claim, or per item bought (0012): each item's share of the claim's amount, under its own
+// category, so the rows add up to what was claimed; a claim without items is one row, under its own.
 export async function GET(request: NextRequest) {
   const me = await getMe();
   if (!me?.member || !isFinance(me.member)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
     [claims, budgets, categories, events] = await Promise.all([
       fetchAll((from, to) => {
         let q = supabase.from("claims")
-          .select("id, created_at, kind, status, claimant_name, budget_id, category_id, expense_date, vendor_name, due_date, description, amount_cents, payout_type, payment_reference");
+          .select("id, created_at, kind, status, claimant_name, budget_id, category_id, expense_date, vendor_name, due_date, description, amount_cents, payout_type, payment_reference, items");
         if (f.divisionId) q = q.eq("division_id", f.divisionId);
         if (f.budgetId) q = q.eq("budget_id", f.budgetId);
         if (f.status) q = q.eq("status", f.status);
@@ -51,19 +54,37 @@ export async function GET(request: NextRequest) {
   }
   claims.reverse(); // newest first
 
-  const rows = [
-    // Dates are Singapore calendar dates, as the portal shows them.
-    ["id", "submitted", "kind", "status", "claimant", "budget", "category_group", "category", "purchase_date", "vendor", "due_date", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
-    ...claims.map((c) => [
-      c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, budget.get(c.budget_id) ?? "", catGroup.get(c.category_id) ?? "", cat.get(c.category_id) ?? "",
-      c.expense_date ?? "", c.vendor_name ?? "", c.due_date ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type ?? "", paidOn.get(c.id) ?? "", c.payment_reference ?? "",
-    ]),
-  ];
+  // Dates are Singapore calendar dates, as the portal shows them.
+  const rows = f.rows === "items"
+    ? [
+      ["claim_id", "submitted", "kind", "status", "claimant", "budget", "paid_on", "item", "item_amount_sgd", "category_group", "category", "spend_sgd"],
+      ...claims.flatMap((c) => {
+        const claim = [c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, budget.get(c.budget_id) ?? "", paidOn.get(c.id) ?? ""];
+        const items: ClaimItem[] = Array.isArray(c.items) ? c.items : [];
+        const shares = shareAmount(Number(c.amount_cents), items);
+        // An item without a category counts under the claim's.
+        if (shares) {
+          return items.map((i, n) => {
+            const category = i.category_id ?? c.category_id;
+            return [...claim, i.description, i.amount_cents === null ? "" : (i.amount_cents / 100).toFixed(2),
+              catGroup.get(category) ?? "", cat.get(category) ?? "", (shares[n] / 100).toFixed(2)];
+          });
+        }
+        return [[...claim, "(not itemised)", "", catGroup.get(c.category_id) ?? "", cat.get(c.category_id) ?? "", (Number(c.amount_cents) / 100).toFixed(2)]];
+      }),
+    ]
+    : [
+      ["id", "submitted", "kind", "status", "claimant", "budget", "category_group", "category", "purchase_date", "vendor", "due_date", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
+      ...claims.map((c) => [
+        c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, budget.get(c.budget_id) ?? "", catGroup.get(c.category_id) ?? "", cat.get(c.category_id) ?? "",
+        c.expense_date ?? "", c.vendor_name ?? "", c.due_date ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type ?? "", paidOn.get(c.id) ?? "", c.payment_reference ?? "",
+      ]),
+    ];
   const csv = rows.map((r) => r.map((v) => csvCell(String(v))).join(",")).join("\r\n");
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="nn-claims-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Content-Disposition": `attachment; filename="nn-${f.rows === "items" ? "items" : "claims"}-${new Date().toISOString().slice(0, 10)}.csv"`,
       "Cache-Control": "no-store",
     },
   });

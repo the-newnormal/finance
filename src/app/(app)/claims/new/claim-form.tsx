@@ -2,18 +2,23 @@
 
 import { Bot, FileText, ListChecks, Paperclip, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { forgetSavedPayout, submitClaim, type ClaimInput } from "../actions";
-import { precheckClaim } from "../precheck-actions";
+import { precheckClaim, type PrecheckResult } from "../precheck-actions";
 import { Alert } from "@/components/ui/alert";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { byGroup } from "@/lib/categories";
+import { comparedFixes } from "@/lib/claim-items";
+import { parseAmountToCents } from "@/lib/money";
 import { DOCUMENT_FIELDS, type DocumentKind } from "@/lib/receipt-fields";
 import { ACCEPT_ATTR, ACCEPTED, uploadable } from "@/lib/receipt-upload";
 import { createClient } from "@/lib/supabase/client";
-import { PAYOUT_LABEL, type Category, type ClaimRule, type PayoutType } from "@/lib/types";
+import { PAYOUT_LABEL, type Category, type ClaimKind, type ClaimRule, type PayoutType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -29,26 +34,23 @@ type Props = {
   savedPayout: { type: PayoutType; masked: string } | null;
   /** The rules Finance shows on this form (claim_rules), in order. */
   rules: Pick<ClaimRule, "id" | "title" | "body" | "applies_to" | "link_label" | "link_url">[];
-  /** Whether the AI receipt check is on: it reads the files as they submit, and for reviewers. */
+  /** Whether the AI receipt check is on: it reads the files as they're attached, and for reviewers. */
   aiCheck: boolean;
 };
 
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
 
-// A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
+// A file attached and uploaded: straight away, so the AI can read it before the claim is sent.
 // `proof` marks a proof of payment for an invoice the claimant paid; all of them are attached.
-type Attachment = { file: File; path?: string; proof?: boolean };
-
-// The fields the AI check reads (with the kind, budget, category and files); editing another, such as
-// the payout details, doesn't call for a new check.
-const CHECKED_FIELDS = new Set(["budgetId", "categoryId", "description", "amount", "expenseDate", "vendorName"]);
+type Attachment = { file: File; path: string; proof?: boolean };
 
 // What the claimant ticks to submit, in TRP's words: it agrees to the declaration above it.
 const AGREEMENT = "I agree that all relevant information is accurate and free of errors, and I understand the processing timeline and terms above.";
 
 export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budgets, provisions, categories, savedPayout, rules, aiCheck }: Props) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
   const [budgetId, setBudgetId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   // Only the categories the chosen budget provisions (the database refuses any other).
@@ -56,7 +58,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
     const ids = new Set(provisions.filter((p) => p.budget_id === budgetId).map((p) => p.category_id));
     return categories.filter((c) => ids.has(c.id));
   }, [budgetId, provisions, categories]);
-  const [kind, setKind] = useState<"reimbursement" | "invoice">("reimbursement");
+  const [kind, setKind] = useState<ClaimKind>("reimbursement");
   // Only chooses which mandatory fields the form lists: a receipt, or an invoice they paid.
   const [paidWith, setPaidWith] = useState<"receipt" | "paid_invoice">("receipt");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -64,15 +66,16 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   const [payoutType, setPayoutType] = useState<PayoutType | "saved">(savedPayout ? "saved" : "paynow_mobile");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [checking, setChecking] = useState(false);
-  // HEIC photos are made into JPEGs as they're chosen, which takes a moment: files can't change meanwhile.
-  const [converting, setConverting] = useState(false);
-  // The last AI check: what it read (`key`) and what it found to fix (none if it couldn't run). The same
-  // claim isn't checked twice, so submitting it again unchanged sends it as it is; `changed` (a field
-  // the check reads was edited since) only lets the button say so.
-  const [check, setCheck] = useState<{ key: string; fixes: string[] } | null>(null);
-  const [changed, setChanged] = useState(false);
-  const fixes = check?.fixes.length ? check.fixes : null;
+  // HEIC photos are made into JPEGs and every file is uploaded as it's chosen, which takes a moment:
+  // files can't change meanwhile.
+  const [attaching, setAttaching] = useState(false);
+  // With the AI check on, the files are read as soon as they're attached, by kind and files; the
+  // claim can be sent once the read of what's attached now is back (one that couldn't run holds
+  // nothing up). Reads are kept, so going back to files already read doesn't read them again.
+  const [reads, setReads] = useState<Record<string, PrecheckResult>>({});
+  const asked = useRef(new Set<string>());
+  // What the read found to fix, shown as the claim is sent; the claimant may send it anyway.
+  const [toFix, setToFix] = useState<string[] | null>(null);
   // One per claim: lets the server recognise a retry of this same claim.
   const [submissionId] = useState(() => crypto.randomUUID());
 
@@ -82,95 +85,90 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   // An invoice they paid needs the invoice and, separately, the proof that they paid it.
   const needsProof = documentKind === "paid_invoice";
   const effectivePayout = isInvoice && payoutType === "saved" ? "paynow_uen" : payoutType;
+  const readKey = JSON.stringify({ kind, paths: files.map((a) => a.path) });
+  const read = reads[readKey];
+  const reading = aiCheck && files.length > 0 && !read;
+
+  useEffect(() => {
+    const { kind: k, paths } = JSON.parse(readKey) as { kind: ClaimKind; paths: string[] };
+    if (!aiCheck || !paths.length || asked.current.has(readKey)) return;
+    asked.current.add(readKey);
+    precheckClaim({ kind: k, attachmentPaths: paths })
+      .catch((): PrecheckResult => ({ ok: false }))
+      .then((result) => setReads((r) => ({ ...r, [readKey]: result })));
+  }, [aiCheck, readKey]);
 
   async function addFiles(list: FileList | null, proof: boolean) {
     const chosen = Array.from(list ?? []); // read now: the input is cleared once this returns
     if (!chosen.length) return;
-    setConverting(true);
-    const next = [...files];
-    for (const picked of chosen) {
-      if (next.length >= MAX_FILES) break;
-      let f: File;
-      try { f = await uploadable(picked); }
-      catch { setError(`${picked.name} couldn't be converted to a JPEG. Attach a screenshot of it instead.`); continue; }
-      if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
-      if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
-      next.push({ file: f, proof });
+    setAttaching(true);
+    setError(null);
+    try {
+      const storage = createClient().storage.from("receipts");
+      const next = [...files];
+      for (const picked of chosen) {
+        if (next.length >= MAX_FILES) break;
+        let f: File;
+        try { f = await uploadable(picked); }
+        catch { setError(`${picked.name} couldn't be converted to a JPEG. Attach a screenshot of it instead.`); continue; }
+        if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
+        if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
+        // Straight into the private receipts bucket, in this member's own folder (storage RLS). Only
+        // letters, digits, _ - and single dots (the database refuses ".." in any path).
+        const safe = f.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
+        const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
+        const uploaded = await storage.upload(path, f, { contentType: f.type, upsert: false }).catch(() => null);
+        if (!uploaded || uploaded.error) { setError(`${f.name} couldn't be uploaded. Check your connection and try again.`); continue; }
+        next.push({ file: f, path, proof });
+      }
+      setFiles(next);
+    } catch {
+      setError("The files couldn't be attached. Try again.");
+    } finally {
+      setAttaching(false);
     }
-    setFiles(next);
-    setChanged(true);
-    setConverting(false);
   }
 
   // Changing what is attached starts the files afresh, as TRP's form does: a file attached as one
   // kind of document is never sent as another (an invoice as the receipt, say).
-  function choose(nextKind: typeof kind, nextPaidWith: typeof paidWith) {
+  function choose(nextKind: ClaimKind, nextPaidWith: typeof paidWith) {
     const next: DocumentKind = nextKind === "invoice" ? "vendor_invoice" : nextPaidWith;
     setKind(nextKind);
     setPaidWith(nextPaidWith);
     if (next !== documentKind) setFiles([]);
-    setChanged(true);
   }
 
-  // Files can't change while a submission is uploading them (the controls are disabled), so what
-  // is attached is always what's on screen. Removed files stay private in the member's own folder.
+  // Files can't change while the claim is being sent (the controls are disabled), so what is attached
+  // is always what's on screen. Removed files stay private in the member's own folder.
   function removeFile(i: number) {
     if (busy) return;
     setFiles(files.filter((_, j) => j !== i));
-    setChanged(true);
   }
 
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (!files.some((a) => !a.proof)) return setError(isInvoice || needsProof ? "Attach the invoice." : "Attach your receipt.");
     if (needsProof && !files.some((a) => a.proof)) return setError("Attach the proof of payment: a screenshot of the PayNow or bank transfer.");
+    // What the read found to fix, with the documents' total and date compared to what was entered
+    // (never the payout details): shown first, and the claimant may send it anyway, as the AI can be
+    // wrong and a reviewer decides.
     const fd = new FormData(e.currentTarget);
+    const fixes = read?.ok
+      ? [...read.fixes, ...comparedFixes(read.documents, {
+        amountCents: parseAmountToCents(String(fd.get("amount") ?? "")),
+        expenseDate: isInvoice ? null : String(fd.get("expenseDate") ?? "") || null,
+      })]
+      : [];
+    if (fixes.length) return setToFix(fixes);
+    void send(e.currentTarget);
+  }
+
+  async function send(form: HTMLFormElement) {
+    setToFix(null);
+    const fd = new FormData(form);
     const s = (k: string) => String(fd.get(k) ?? "");
     setBusy(true);
-    let attachmentPaths: string[];
-    try {
-      // Straight into the private receipts bucket, in this member's own folder (storage RLS). Files
-      // already uploaded by an earlier attempt are reused, not uploaded again.
-      const storage = createClient().storage.from("receipts");
-      const uploaded: Attachment[] = [];
-      for (const a of files) {
-        if (a.path) { uploaded.push(a); continue; }
-        // Only letters, digits, _ - and single dots (the database refuses ".." in any path).
-        const safe = a.file.name.replace(/[^\w.-]+/g, "_").replace(/\.{2,}/g, ".").slice(-80);
-        const path = `${folder}/${crypto.randomUUID().slice(0, 8)}-${safe}`;
-        const { error } = await storage.upload(path, a.file, { contentType: a.file.type, upsert: false });
-        if (error) {
-          setFiles([...uploaded, ...files.slice(uploaded.length)]);
-          throw error;
-        }
-        uploaded.push({ ...a, path });
-      }
-      setFiles(uploaded);
-      attachmentPaths = uploaded.map((a) => a.path!);
-    } catch {
-      setError("A file couldn't be uploaded. Check your connection and try again.");
-      setBusy(false);
-      return;
-    }
-
-    // With the AI check on, the files are read first, against what was entered (never the payout
-    // details), and anything to fix is shown. Submitting the same again sends it as it is; a check
-    // that can't run doesn't hold the claim up.
-    const checked = {
-      kind, budgetId, categoryId, description: s("description"), amount: s("amount"), expenseDate: s("expenseDate"),
-      vendorName: isInvoice ? s("vendorName") : undefined, attachmentPaths,
-    };
-    const key = JSON.stringify(checked);
-    if (aiCheck && check?.key !== key) {
-      setChecking(true);
-      const res = await precheckClaim(checked).catch(() => ({ ok: false as const }));
-      setChecking(false);
-      setCheck({ key, fixes: res.ok ? res.fixes : [] });
-      setChanged(false);
-      if (res.ok && res.fixes.length) { setBusy(false); return; }
-    }
-
     try {
       const payout: ClaimInput["payout"] =
         effectivePayout === "saved" ? { type: "saved" }
@@ -186,11 +184,13 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
         expenseDate: s("expenseDate"),
         vendorName: isInvoice ? s("vendorName") : undefined,
         dueDate: isInvoice ? s("dueDate") : undefined,
-        attachmentPaths,
+        attachmentPaths: files.map((a) => a.path),
         payout,
         savePayout: fd.get("savePayout") === "on",
         agreed: fd.get("agreed") === "on",
         submissionId,
+        // What was bought, as the AI read it from these files (0012).
+        items: read?.ok && read.items.length ? read.items : undefined,
       });
       if (!res.ok) { setError(res.error); setBusy(false); return; }
       router.push(`/claims/${res.id}?submitted=1${res.payoutSaved ? "" : "&unsaved=1"}`);
@@ -207,13 +207,13 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   ];
 
   return (
-    <form onSubmit={onSubmit} onChange={(e) => { if (CHECKED_FIELDS.has((e.target as Element).getAttribute("name") ?? "")) setChanged(true); }} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      {/* Locked while submitting (and while the AI check reads the files): what is sent is what is on screen. */}
+    <form ref={formRef} onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+      {/* Locked while submitting: what is sent is what is on screen. */}
       <fieldset disabled={busy} className="grid min-w-0 content-start gap-6">
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">
             {(["reimbursement", "invoice"] as const).map((k) => (
-              <button key={k} type="button" disabled={busy || converting} onClick={() => choose(k, paidWith)}
+              <button key={k} type="button" disabled={busy || attaching} onClick={() => choose(k, paidWith)}
                 className={cn("rounded-xl px-4 py-2.5 text-left text-sm transition-colors", kind === k ? "bg-ink text-white" : "hover:bg-canvas")}>
                 <div className="font-medium">{k === "reimbursement" ? "Reimburse me" : "Pay a vendor invoice"}</div>
                 <div className={cn("text-xs", kind === k ? "text-white/70" : "text-ink-soft")}>
@@ -275,14 +275,14 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             <CardTitle>{isInvoice ? "Invoice" : paidWith === "paid_invoice" ? "Invoice and proof of payment" : "Receipt"}</CardTitle>
             <CardDescription>
               Images or PDFs, up to 10 MB each, max {MAX_FILES} files.
-              {aiCheck && " When you submit, an AI service (Anthropic's Claude) reads them to check they show what's needed, and reviewers may have it read them again."}
+              {aiCheck && " As you attach them, an AI service (Anthropic's Claude) reads them to check they show what's needed and to list what was bought, and reviewers may have it read them again."}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
             {!isInvoice && (
               <div role="radiogroup" aria-label="What are you attaching?" className="grid grid-cols-2 gap-2 rounded-xl border border-line p-1">
                 {(["receipt", "paid_invoice"] as const).map((k) => (
-                  <button key={k} type="button" role="radio" aria-checked={paidWith === k} disabled={busy || converting} onClick={() => choose(kind, k)}
+                  <button key={k} type="button" role="radio" aria-checked={paidWith === k} disabled={busy || attaching} onClick={() => choose(kind, k)}
                     className={cn("rounded-lg px-3 py-2 text-sm", paidWith === k ? "bg-ink text-white" : "hover:bg-canvas")}>
                     {k === "receipt" ? "Receipt" : "Invoice I've paid"}
                   </button>
@@ -292,12 +292,12 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             <MandatoryFields kind={documentKind} ai={aiCheck} />
             {needsProof ? (
               <>
-                <FileSlot title="Invoice(s)" hint="One or more invoices you paid." files={files} proof={false} busy={busy || converting} onAdd={addFiles} onRemove={removeFile} />
+                <FileSlot title="Invoice(s)" hint="One or more invoices you paid." files={files} proof={false} busy={busy || attaching} onAdd={addFiles} onRemove={removeFile} />
                 <FileSlot title="Proof(s) of payment" hint="One or more screenshots of the PayNow or bank transfer confirmation."
-                  files={files} proof busy={busy || converting} onAdd={addFiles} onRemove={removeFile} />
+                  files={files} proof busy={busy || attaching} onAdd={addFiles} onRemove={removeFile} />
               </>
             ) : (
-              <FileSlot files={files} proof={false} busy={busy || converting} onAdd={addFiles} onRemove={removeFile} />
+              <FileSlot files={files} proof={false} busy={busy || attaching} onAdd={addFiles} onRemove={removeFile} />
             )}
           </CardContent>
         </Card>
@@ -388,23 +388,28 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
                 ? "This goes straight to Finance for approval."
                 : "Your event lead will review this first, then Finance gives final approval. We'll e-mail you when it's approved."}
             </p>
-            {fixes && (
-              <div role="status" className="grid gap-2 rounded-xl border border-orange/60 bg-orange/10 p-3.5">
-                <div className="flex items-center gap-2 font-medium"><Bot className="size-4 shrink-0" /> The AI check found something to fix</div>
-                <ul className="grid list-disc gap-1 pl-5">{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
-                <p className="text-ink-soft">
-                  Fix it and submit again, or submit it as it is: the AI can be wrong, and your reviewer decides.
-                </p>
-              </div>
-            )}
             {error && <Alert>{error}</Alert>}
-            <Button type="submit" size="lg" className="w-full" disabled={busy || converting}>
-              {checking ? "Checking your receipts…" : busy ? "Submitting…" : converting ? "Converting your photos…"
-                : fixes && !changed ? "Submit as it is" : isInvoice ? "Submit invoice" : "Submit claim"}
+            <Button type="submit" size="lg" className="w-full" disabled={busy || attaching || reading}>
+              {busy ? "Submitting…" : attaching ? "Uploading your files…" : reading ? "Reading your receipts…"
+                : isInvoice ? "Submit invoice" : "Submit claim"}
             </Button>
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={toFix !== null} onOpenChange={(open) => { if (!open) setToFix(null); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle><Bot className="size-4 shrink-0" /> The AI check found something to fix</AlertDialogTitle>
+          <ul className="grid list-disc gap-1 pl-5 text-sm">{toFix?.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          <AlertDialogDescription>Go back and fix it, or submit it as it is: the AI can be wrong, and your reviewer decides.</AlertDialogDescription>
+          <div className="flex flex-wrap justify-end gap-2">
+            <AlertDialogCancel asChild><Button type="button" variant="outline">Go back and fix</Button></AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button type="button" onClick={() => { if (formRef.current) void send(formRef.current); }}>Submit anyway</Button>
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </form>
   );
 }

@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it, vi } from "vitest";
-import { describeClaim, mediaTypeOf, prepareFiles, ReceiptCheckError, runReceiptCheck, savedCheck, StoredFindings, type CheckResult } from "./receipt-check";
+import {
+  describeClaim, describeRead, mediaTypeOf, prepareFiles, ReceiptCheckError, runReceiptCheck, runReceiptRead, savedCheck, StoredFindings,
+  type CheckResult, type ReadResult,
+} from "./receipt-check";
 
 const file = (name: string, mediaType: string, bytes = 10) => ({ name, mediaType, data: new Uint8Array(bytes) });
 
@@ -122,6 +125,39 @@ describe("runReceiptCheck", () => {
   it("throws a coded error on an API failure, with its HTTP status", async () => {
     const failing = { messages: { parse: vi.fn(async () => { throw new Anthropic.APIError(529, undefined, "overloaded", new Headers()); }) } };
     await expect(runReceiptCheck([], "x", failing as unknown as Anthropic)).rejects.toEqual(new ReceiptCheckError("api_529"));
+  });
+});
+
+describe("describeRead", () => {
+  it("gives the claim's kind and fields, its rules, the categories to choose from, and the files left out, never an amount", () => {
+    const text = describeRead("invoice", [
+      { title: "Invoices", body: "Show the UEN.", applies_to: "invoice" },
+      { title: "Receipts", body: "Itemised.", applies_to: "reimbursement" },
+    ], [{ name: "Venue & Rental", groupLabel: "Venue & Production" }, { name: "Logistics", groupLabel: null }], [{ name: "x.zip", reason: "nope" }]);
+    expect(text).toContain("Mandatory fields (vendor_invoice):");
+    expect(text).toContain("## Invoices\nShow the UEN.");
+    expect(text).not.toContain("Itemised.");
+    expect(text).toContain("- Venue & Rental (Venue & Production)\n- Logistics");
+    expect(text).toContain("- x.zip: nope");
+    expect(text).not.toContain("$");
+  });
+});
+
+describe("runReceiptRead", () => {
+  it("asks Claude Haiku for the structured read, files first", async () => {
+    const result: ReadResult = { documents: [], document_kind: "receipt", fields: [], missing: [], items: [] };
+    const parse = vi.fn(async () => ({ stop_reason: "end_turn", parsed_output: result, model: "claude-haiku-5-5" }));
+    expect(await runReceiptRead([{ type: "text", text: "File 1: a.jpg" }], "The claim: …", { messages: { parse } } as unknown as Anthropic))
+      .toEqual({ result, model: "claude-haiku-5-5" });
+    const params = (parse.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(params).toMatchObject({ model: "claude-haiku-5-5", output_config: { effort: "medium" } });
+    expect(params.system).toContain("List every item bought, line by line");
+    expect(params.messages).toEqual([{ role: "user", content: [{ type: "text", text: "File 1: a.jpg" }, { type: "text", text: "The claim: …" }] }]);
+  });
+
+  it("throws a coded error as the reviewer's check does", async () => {
+    const parse = vi.fn(async () => ({ stop_reason: "refusal", parsed_output: null }));
+    await expect(runReceiptRead([], "x", { messages: { parse } } as unknown as Anthropic)).rejects.toEqual(new ReceiptCheckError("refusal"));
   });
 });
 

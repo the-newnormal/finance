@@ -66,10 +66,19 @@ function ExportCard({ today, divisions, budgets }: { today: string; divisions: D
     <Card id="export" className="scroll-mt-6">
       <CardHeader>
         <CardTitle>Export claims (CSV)</CardTitle>
-        <CardDescription>Every claim, or only those you choose. Dates are Singapore dates. No payment details are included.</CardDescription>
+        <CardDescription>
+          Every claim, or only those you choose. Dates are Singapore dates. No payment details are included. For a year&apos;s
+          spending by category, choose a row per item bought, the year&apos;s disbursement dates and the reimbursed or settled status.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form action="/api/export" method="get" className="grid gap-4 sm:grid-cols-3">
+          <Field label="One row per" className="sm:col-span-3">
+            <Select name="rows" defaultValue="claims">
+              <option value="claims">Claim</option>
+              <option value="items">Item bought (each item&apos;s share of its claim, by category)</option>
+            </Select>
+          </Field>
           <Field label="From"><Input type="date" name="from" max={today} /></Field>
           <Field label="To"><Input type="date" name="to" max={today} /></Field>
           <Field label="The dates are when it was">
