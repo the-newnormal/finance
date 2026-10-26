@@ -84,7 +84,7 @@ export default async function ReservePage() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="grid content-start gap-6">
           <Card>
             <CardHeader><CardTitle>Claims</CardTitle></CardHeader>
