@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { DOCUMENT_FIELDS, type DocumentKind } from "@/lib/receipt-fields";
+import { ACCEPT_ATTR, ACCEPTED, uploadable } from "@/lib/receipt-upload";
 import { createClient } from "@/lib/supabase/client";
 import { PAYOUT_LABEL, type ClaimRule, type PayoutType } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -33,8 +34,6 @@ type Props = {
 
 const MAX_FILES = 5;
 const MAX_BYTES = 10 * 1024 * 1024;
-// The types the receipts bucket accepts (supabase/migrations/0003_claims.sql).
-const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
 
 // A chosen file, and where it was uploaded once it has been (kept, so a retry doesn't upload again).
 // `proof` marks a proof of payment for an invoice the claimant paid; all of them are attached.
@@ -65,6 +64,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  // HEIC photos are made into JPEGs as they're chosen, which takes a moment: files can't change meanwhile.
+  const [converting, setConverting] = useState(false);
   // The last AI check: what it read (`key`) and what it found to fix (none if it couldn't run). The same
   // claim isn't checked twice, so submitting it again unchanged sends it as it is; `changed` (a field
   // the check reads was edited since) only lets the button say so.
@@ -81,16 +82,23 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   const needsProof = documentKind === "paid_invoice";
   const effectivePayout = isInvoice && payoutType === "saved" ? "paynow_uen" : payoutType;
 
-  function addFiles(list: FileList | null, proof: boolean) {
-    if (!list) return;
+  async function addFiles(list: FileList | null, proof: boolean) {
+    const chosen = Array.from(list ?? []); // read now: the input is cleared once this returns
+    if (!chosen.length) return;
+    setConverting(true);
     const next = [...files];
-    for (const f of Array.from(list)) {
+    for (const picked of chosen) {
+      if (next.length >= MAX_FILES) break;
+      let f: File;
+      try { f = await uploadable(picked); }
+      catch { setError(`${picked.name} couldn't be converted to a JPEG. Attach a screenshot of it instead.`); continue; }
       if (!ACCEPTED.includes(f.type)) { setError(`${f.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF.`); continue; }
       if (f.size > MAX_BYTES) { setError(`${f.name} is larger than 10 MB.`); continue; }
-      if (next.length < MAX_FILES) next.push({ file: f, proof });
+      next.push({ file: f, proof });
     }
     setFiles(next);
     setChanged(true);
+    setConverting(false);
   }
 
   // Changing what is attached starts the files afresh, as TRP's form does: a file attached as one
@@ -204,7 +212,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
         {canInvoice && (
           <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface p-1.5">
             {(["reimbursement", "invoice"] as const).map((k) => (
-              <button key={k} type="button" disabled={busy} onClick={() => choose(k, paidWith)}
+              <button key={k} type="button" disabled={busy || converting} onClick={() => choose(k, paidWith)}
                 className={cn("rounded-xl px-4 py-2.5 text-left text-sm transition-colors", kind === k ? "bg-ink text-white" : "hover:bg-canvas")}>
                 <div className="font-medium">{k === "reimbursement" ? "Reimburse me" : "Pay a vendor invoice"}</div>
                 <div className={cn("text-xs", kind === k ? "text-white/70" : "text-ink-soft")}>
@@ -262,14 +270,14 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             <CardTitle>{isInvoice ? "Invoice" : paidWith === "paid_invoice" ? "Invoice and proof of payment" : "Receipt"}</CardTitle>
             <CardDescription>
               Images or PDFs, up to 10 MB each, max {MAX_FILES} files.
-              {aiCheck && " When you submit, an AI service (Anthropic's Claude) reads them to check they show what's needed, and reviewers may have it read them again: JPG, PNG or PDF work best, as it can't read HEIC photos."}
+              {aiCheck && " When you submit, an AI service (Anthropic's Claude) reads them to check they show what's needed, and reviewers may have it read them again."}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
             {!isInvoice && (
               <div role="radiogroup" aria-label="What are you attaching?" className="grid grid-cols-2 gap-2 rounded-xl border border-line p-1">
                 {(["receipt", "paid_invoice"] as const).map((k) => (
-                  <button key={k} type="button" role="radio" aria-checked={paidWith === k} disabled={busy} onClick={() => choose(kind, k)}
+                  <button key={k} type="button" role="radio" aria-checked={paidWith === k} disabled={busy || converting} onClick={() => choose(kind, k)}
                     className={cn("rounded-lg px-3 py-2 text-sm", paidWith === k ? "bg-ink text-white" : "hover:bg-canvas")}>
                     {k === "receipt" ? "Receipt" : "Invoice I've paid"}
                   </button>
@@ -279,12 +287,12 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
             <MandatoryFields kind={documentKind} ai={aiCheck} />
             {needsProof ? (
               <>
-                <FileSlot title="Invoice(s)" hint="One or more invoices you paid." files={files} proof={false} busy={busy} onAdd={addFiles} onRemove={removeFile} />
+                <FileSlot title="Invoice(s)" hint="One or more invoices you paid." files={files} proof={false} busy={busy || converting} onAdd={addFiles} onRemove={removeFile} />
                 <FileSlot title="Proof(s) of payment" hint="One or more screenshots of the PayNow or bank transfer confirmation."
-                  files={files} proof busy={busy} onAdd={addFiles} onRemove={removeFile} />
+                  files={files} proof busy={busy || converting} onAdd={addFiles} onRemove={removeFile} />
               </>
             ) : (
-              <FileSlot files={files} proof={false} busy={busy} onAdd={addFiles} onRemove={removeFile} />
+              <FileSlot files={files} proof={false} busy={busy || converting} onAdd={addFiles} onRemove={removeFile} />
             )}
           </CardContent>
         </Card>
@@ -385,8 +393,8 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
               </div>
             )}
             {error && <Alert>{error}</Alert>}
-            <Button type="submit" size="lg" className="w-full" disabled={busy}>
-              {checking ? "Checking your receipts…" : busy ? "Submitting…"
+            <Button type="submit" size="lg" className="w-full" disabled={busy || converting}>
+              {checking ? "Checking your receipts…" : busy ? "Submitting…" : converting ? "Converting your photos…"
                 : fixes && !changed ? "Submit as it is" : isInvoice ? "Submit invoice" : "Submit claim"}
             </Button>
           </CardContent>
@@ -416,7 +424,7 @@ function MandatoryFields({ kind, ai }: { kind: DocumentKind; ai: boolean }) {
 // Where one kind of document is added: the receipt or invoice, or (proof) the proof of payment.
 function FileSlot({ title, hint, files, proof, busy, onAdd, onRemove }: {
   title?: string; hint?: string; files: Attachment[]; proof: boolean; busy: boolean;
-  onAdd: (list: FileList | null, proof: boolean) => void; onRemove: (i: number) => void;
+  onAdd: (list: FileList | null, proof: boolean) => Promise<void>; onRemove: (i: number) => void;
 }) {
   return (
     <div className="grid gap-2">
@@ -431,9 +439,9 @@ function FileSlot({ title, hint, files, proof, busy, onAdd, onRemove }: {
         <span className="font-medium">Tap to add files</span>
         <span className="text-xs text-ink-soft">or take a photo</span>
         {/* Named for its slot, so the invoice and proof inputs don't sound the same to a screen reader. */}
-        <input type="file" accept={ACCEPTED.join(",")} multiple disabled={busy} className="sr-only"
+        <input type="file" accept={ACCEPT_ATTR} multiple disabled={busy} className="sr-only"
           aria-label={title ? `Add ${title.toLowerCase()}` : undefined}
-          onChange={(e) => { onAdd(e.target.files, proof); e.target.value = ""; }} />
+          onChange={(e) => { void onAdd(e.target.files, proof); e.target.value = ""; }} />
       </label>
       {files.map((a, i) => !a.proof === !proof && (
         <div key={i} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">
