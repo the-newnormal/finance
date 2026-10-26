@@ -87,23 +87,25 @@ function CategoriesCard({ categories }: { categories: Category[] }) {
   return (
     <Card>
       <CardHeader><CardTitle>Claim categories</CardTitle></CardHeader>
-      <CardContent className="grid gap-4">
+      {/* grid-cols-1 (minmax(0, 1fr)): a long name can't widen the list past the card. */}
+      <CardContent className="grid grid-cols-1 gap-4">
         {error && <Alert>{error}</Alert>}
         {byGroup(categories).map((g) => (
-          <div key={g.label} className="grid gap-1.5">
+          <div key={g.label} className="grid grid-cols-1 gap-1.5">
             <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{g.group ? g.label : "Not grouped yet"}</div>
             {!g.group && <p className="text-xs text-ink-soft">Give each one a group, so reports count what was claimed against it; then hide those no longer used.</p>}
             {g.categories.map((c) => (
-              <div key={c.id} className={`flex items-center gap-2 rounded-lg bg-canvas px-3 py-1.5 text-sm ${c.active ? "" : "opacity-50"}`}>
-                <span className="mr-auto min-w-0 truncate">{c.name}</span>
-                <Select aria-label={`Group of ${c.name}`} className="h-8 w-36 text-xs" disabled={pending} value={c.category_group ?? ""}
+              // Two lines, so it fits the side column: the name (wrapped, never cut) and Hide, then its group.
+              <div key={c.id} className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 rounded-lg bg-canvas py-2 pl-3 pr-1.5 text-sm ${c.active ? "" : "opacity-50"}`}>
+                <span className="break-words">{c.name}</span>
+                <Button size="sm" variant="ghost" className="row-span-2" disabled={pending} onClick={() => run(() => setCategoryActive(c.id, !c.active))}>
+                  {c.active ? "Hide" : "Show"}
+                </Button>
+                <Select aria-label={`Group of ${c.name}`} className="h-8 w-full max-w-56 text-xs" disabled={pending} value={c.category_group ?? ""}
                   onChange={(e) => run(() => setCategoryGroup(c.id, e.target.value as CategoryGroup))}>
                   {!c.category_group && <option value="" disabled>Choose a group</option>}
                   {groups.map((k) => <option key={k} value={k}>{CATEGORY_GROUP_LABEL[k]}</option>)}
                 </Select>
-                <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setCategoryActive(c.id, !c.active))}>
-                  {c.active ? "Hide" : "Show"}
-                </Button>
               </div>
             ))}
           </div>
