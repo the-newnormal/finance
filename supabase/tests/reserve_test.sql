@@ -26,7 +26,7 @@ insert into public.members (id, email, name, role) values
   ('0b100000-0000-4000-8000-000000000001', 'r-fin@test.local', 'R Fin', 'finance'),
   ('0b100000-0000-4000-8000-000000000002', 'r-lead@test.local', 'R Lead', 'lead'),
   ('0b100000-0000-4000-8000-000000000003', 'r-vol@test.local', 'R Vol', 'volunteer');
-insert into public.categories (id, name) values ('0b300000-0000-4000-8000-000000000001', 'R Printing');
+insert into public.categories (id, name, category_group) values ('0b300000-0000-4000-8000-000000000001', 'R Printing', 'programme');
 insert into storage.objects (bucket_id, name) values
   ('receipts', '0b100000-0000-4000-8000-000000000001/r/r.pdf'),
   ('receipts', '0b100000-0000-4000-8000-000000000002/r/r.pdf'),

@@ -5,7 +5,7 @@ import { singaporeDate } from "@/lib/dates";
 import { inRange, nextDay, parseExportFilters, singaporeDayStart } from "@/lib/export-filters";
 import { getMe } from "@/lib/session";
 import { createClient } from "@/lib/supabase/server";
-import { isFinance } from "@/lib/types";
+import { CATEGORY_GROUP_LABEL, isFinance, type CategoryGroup } from "@/lib/types";
 
 // CSV of claims, for Finance: every claim, or those matching the filters (by submitted or paid
 // date, division, budget, status). Read as the signed-in user (RLS), and never payout details.
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         return q.order("created_at").order("id").range(from, to);
       }),
       fetchAll((from, to) => supabase.from("budgets").select("id, name").order("id").range(from, to)),
-      fetchAll((from, to) => supabase.from("categories").select("id, name").order("id").range(from, to)),
+      fetchAll((from, to) => supabase.from("categories").select("id, name, category_group").order("id").range(from, to)),
       fetchAll((from, to) => supabase.from("claim_events").select("claim_id, at").eq("action", "paid").order("id").range(from, to)),
     ]);
   } catch (e) {
@@ -42,6 +42,8 @@ export async function GET(request: NextRequest) {
   }
   const budget = new Map(budgets.map((b) => [b.id, b.name]));
   const cat = new Map(categories.map((c) => [c.id, c.name]));
+  // Each category's group (0011), for totals by kind of spending; blank for one not grouped yet.
+  const catGroup = new Map(categories.map((c) => [c.id, c.category_group ? CATEGORY_GROUP_LABEL[c.category_group as CategoryGroup] : ""]));
   const paidOn = new Map(events.map((e) => [e.claim_id, singaporeDate(e.at)]));
   // Paid dates come from each claim's payment event; a claim not yet paid has none, so it's left out.
   if (f.dates === "paid" && (f.from || f.to)) {
@@ -51,9 +53,9 @@ export async function GET(request: NextRequest) {
 
   const rows = [
     // Dates are Singapore calendar dates, as the portal shows them.
-    ["id", "submitted", "kind", "status", "claimant", "budget", "category", "purchase_date", "vendor", "due_date", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
+    ["id", "submitted", "kind", "status", "claimant", "budget", "category_group", "category", "purchase_date", "vendor", "due_date", "description", "amount_sgd", "payout_method", "paid_on", "payment_ref"],
     ...claims.map((c) => [
-      c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, budget.get(c.budget_id) ?? "", cat.get(c.category_id) ?? "",
+      c.id, singaporeDate(c.created_at), c.kind, c.status, c.claimant_name, budget.get(c.budget_id) ?? "", catGroup.get(c.category_id) ?? "", cat.get(c.category_id) ?? "",
       c.expense_date ?? "", c.vendor_name ?? "", c.due_date ?? "", c.description, (Number(c.amount_cents) / 100).toFixed(2), c.payout_type ?? "", paidOn.get(c.id) ?? "", c.payment_reference ?? "",
     ]),
   ];

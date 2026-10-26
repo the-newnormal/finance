@@ -34,7 +34,7 @@ insert into public.members (id, email, name, role) values
 insert into public.divisions (id, name) values ('0f200000-0000-4000-8000-000000000001', 'E Division');
 insert into public.division_leads (member_id, division_id) values
   ('0f100000-0000-4000-8000-000000000002', '0f200000-0000-4000-8000-000000000001');
-insert into public.categories (id, name) values ('0f300000-0000-4000-8000-000000000001', 'E Food');
+insert into public.categories (id, name, category_group) values ('0f300000-0000-4000-8000-000000000001', 'E Food', 'programme');
 insert into public.budgets (id, name, division_id) values
   ('0f400000-0000-4000-8000-000000000001', 'E Budget', '0f200000-0000-4000-8000-000000000001');
 insert into public.budget_categories (budget_id, category_id) values

@@ -50,7 +50,7 @@ insert into public.divisions (id, name) values
 insert into public.division_leads (member_id, division_id) values
   ('0c100000-0000-4000-8000-000000000002', '0c200000-0000-4000-8000-000000000001'),
   ('0c100000-0000-4000-8000-000000000003', '0c200000-0000-4000-8000-000000000002');
-insert into public.categories (id, name) values ('0c300000-0000-4000-8000-000000000001', 'F Food');
+insert into public.categories (id, name, category_group) values ('0c300000-0000-4000-8000-000000000001', 'F Food', 'programme');
 insert into public.budgets (id, name, division_id) values
   ('0c400000-0000-4000-8000-000000000001', 'F Budget', '0c200000-0000-4000-8000-000000000001'),
   ('0c400000-0000-4000-8000-000000000002', 'F Budget 2', '0c200000-0000-4000-8000-000000000001');

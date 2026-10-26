@@ -7,11 +7,14 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { byGroup } from "@/lib/categories";
 import { formatSGD, parseBudgetToCents } from "@/lib/money";
-import { RULE_SCOPE_LABEL, type Budget, type Category, type ClaimRule, type ClaimRuleScope, type Division } from "@/lib/types";
+import {
+  CATEGORY_GROUP_LABEL, RULE_SCOPE_LABEL, type Budget, type Category, type CategoryGroup, type ClaimRule, type ClaimRuleScope, type Division,
+} from "@/lib/types";
 import type { Result } from "../people/actions";
 import {
-  addCategory, addDivision, deleteClaimRule, saveBudget, saveClaimRule, setBudgetActive, setCategoryActive, setClaimRuleActive,
+  addCategory, addDivision, deleteClaimRule, saveBudget, saveClaimRule, setBudgetActive, setCategoryActive, setCategoryGroup, setClaimRuleActive,
 } from "./actions";
 
 export type BudgetRow = Budget & { guidelines: { category_id: string; guideline_cents: number }[] };
@@ -45,20 +48,18 @@ export function SetupManager({ divisions, categories, budgets, rules }: {
       </div>
       <div className="grid content-start gap-6">
         <NamedListCard title="Divisions" placeholder="New division" maxLength={80} items={divisions.map((d) => ({ ...d, active: true }))} add={addDivision} />
-        <NamedListCard title="Claim categories" placeholder="e.g. Venue costs" maxLength={60} items={categories} add={addCategory}
-          toggle={(id, active) => setCategoryActive(id, active)} />
+        <CategoriesCard categories={categories} />
       </div>
     </div>
   );
 }
 
-function NamedListCard({ title, placeholder, maxLength, items, add, toggle }: {
+function NamedListCard({ title, placeholder, maxLength, items, add }: {
   title: string;
   placeholder: string;
   maxLength: number;
   items: { id: string; name: string; active: boolean }[];
   add: (name: string) => Promise<Result>;
-  toggle?: (id: string, active: boolean) => Promise<Result>;
 }) {
   const { pending, error, run } = useAction();
   const [name, setName] = useState("");
@@ -70,16 +71,57 @@ function NamedListCard({ title, placeholder, maxLength, items, add, toggle }: {
         {items.map((i) => (
           <div key={i.id} className={`flex items-center justify-between rounded-lg bg-canvas px-3 py-1.5 text-sm ${i.active ? "" : "opacity-50"}`}>
             {i.name}
-            {toggle && (
-              <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => toggle(i.id, !i.active))}>
-                {i.active ? "Hide" : "Show"}
-              </Button>
-            )}
           </div>
         ))}
         <form className="flex gap-2 pt-2" onSubmit={(e) => { e.preventDefault(); run(() => add(name), () => setName("")); }}>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={placeholder} required maxLength={maxLength} />
           <Button size="sm" className="h-10" disabled={pending}>Add</Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Categories under their groups (0011). One not grouped yet (from before groups) is given a group
+// before it can be hidden, so what was claimed against it still counts in a group's spending.
+function CategoriesCard({ categories }: { categories: Category[] }) {
+  const { pending, error, run } = useAction();
+  const [name, setName] = useState("");
+  const [group, setGroup] = useState<CategoryGroup | "">("");
+  const groups = Object.keys(CATEGORY_GROUP_LABEL) as CategoryGroup[];
+  return (
+    <Card>
+      <CardHeader><CardTitle>Claim categories</CardTitle></CardHeader>
+      <CardContent className="grid gap-4">
+        {error && <Alert>{error}</Alert>}
+        {byGroup(categories).map((g) => (
+          <div key={g.label} className="grid gap-1.5">
+            <div className="text-xs font-semibold uppercase tracking-wide text-ink-soft">{g.group ? g.label : "Not grouped yet"}</div>
+            {!g.group && <p className="text-xs text-ink-soft">Give each one a group, so reports count what was claimed against it; then hide those no longer used.</p>}
+            {g.categories.map((c) => (
+              <div key={c.id} className={`flex items-center gap-2 rounded-lg bg-canvas px-3 py-1.5 text-sm ${c.active ? "" : "opacity-50"}`}>
+                <span className="mr-auto min-w-0 truncate">{c.name}</span>
+                <Select aria-label={`Group of ${c.name}`} className="h-8 w-36 text-xs" disabled={pending} value={c.category_group ?? ""}
+                  onChange={(e) => run(() => setCategoryGroup(c.id, e.target.value as CategoryGroup))}>
+                  {!c.category_group && <option value="" disabled>Choose a group</option>}
+                  {groups.map((k) => <option key={k} value={k}>{CATEGORY_GROUP_LABEL[k]}</option>)}
+                </Select>
+                <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setCategoryActive(c.id, !c.active))}>
+                  {c.active ? "Hide" : "Show"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        ))}
+        <form className="grid gap-2 pt-2" onSubmit={(e) => { e.preventDefault(); if (group) run(() => addCategory(name, group), () => setName("")); }}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="New category" aria-label="New category" required maxLength={60} />
+          <div className="flex gap-2">
+            <Select aria-label="Its group" required value={group} onChange={(e) => setGroup(e.target.value as CategoryGroup)}>
+              <option value="" disabled>In group…</option>
+              {groups.map((k) => <option key={k} value={k}>{CATEGORY_GROUP_LABEL[k]}</option>)}
+            </Select>
+            <Button size="sm" className="h-10" disabled={pending}>Add</Button>
+          </div>
         </form>
       </CardContent>
     </Card>
@@ -187,10 +229,14 @@ function BudgetForm({ budget, divisions, categories, onDone }: {
           <div key={r.key} className="flex gap-2">
             <Select aria-label="Category" required value={r.categoryId} onChange={(e) => setRow(r.key, { categoryId: e.target.value })}>
               <option value="" disabled>Choose a category</option>
-              {choosable.map((c) => (
-                <option key={c.id} value={c.id} disabled={r.categoryId !== c.id && rows.some((o) => o.categoryId === c.id)}>
-                  {c.name}{c.active ? "" : " (hidden)"}
-                </option>
+              {byGroup(choosable).map((g) => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.categories.map((c) => (
+                    <option key={c.id} value={c.id} disabled={r.categoryId !== c.id && rows.some((o) => o.categoryId === c.id)}>
+                      {c.name}{c.active ? "" : " (hidden)"}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </Select>
             <Input aria-label="Guideline (SGD)" required inputMode="decimal" placeholder="0.00" className="w-36"

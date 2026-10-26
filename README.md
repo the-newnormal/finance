@@ -17,7 +17,7 @@ pnpm supabase db reset            # apply migrations + seed
 pnpm dev
 ```
 
-`supabase/seed.sql` creates `finance@example.com` (Finance), a division, six categories and one event budget that provisions three of them. Request a link at `/login` and open it from Mailpit at http://127.0.0.1:54324.
+`supabase/seed.sql` creates `finance@example.com` (Finance), a division and one event budget that provisions three of the categories (migration 0011 adds them, in their five groups). Request a link at `/login` and open it from Mailpit at http://127.0.0.1:54324.
 
 ```bash
 pnpm supabase test db             # RLS and workflow tests in supabase/tests/
@@ -29,7 +29,7 @@ pnpm typecheck && pnpm lint && pnpm test
 
 ## How it works
 - **Roles:** volunteer, division lead (preliminary approval of their divisions' claims; sees their budgets and spending) and Finance (everything else, including accounts and setup). See the table in [CLAUDE.md](CLAUDE.md).
-- **Budgets:** divisions are empty shells; Finance creates budgets in them. Each budget provisions spend categories with a guideline amount each, and claims can only use those categories. Leads and Finance see spending against each guideline.
+- **Budgets:** divisions are empty shells; Finance creates budgets in them. Each budget provisions spend categories with a guideline amount each, and claims can only use those categories. Categories sit in five groups (Venue & Production, Programme, People, Marketing & Brand, Operations & Admin), for reports by kind of spending. Leads and Finance see spending against each guideline.
 - **A claim** goes `pending_review` (volunteers only: one approval from a lead of the division) → `pending_finance` → `approved` → `paid`, or `rejected` with a reason. The claimant is emailed when it's approved, rejected or paid.
 - **Disbursements:** Finance opens an approved claim to get a PayNow QR code (amount and reference `NN-XXXXXXXX` pre-filled), makes the transfer in the bank app, then records the disbursement and its bank reference. Bank-transfer claims show the account details instead.
 - **Bank:** Finance records each account's opening balance, grants and other income, adjustments and transfers; paying a claim asks which account it came from. The Bank page shows each account's expected balance and compares it with the DBS balance you type in. Finance can correct any entry, with a reason (every change is kept); correcting a payout corrects its claim's amount, reference and paid date too. Only Finance sees it.
