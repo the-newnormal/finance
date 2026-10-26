@@ -60,7 +60,7 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
         <BudgetBar allocated={Number(budget.guideline_cents)} committed={Number(budget.approved_cents)} spent={Number(budget.paid_cents)} />
       </Card>
       {!budget.is_reserve && (
-        <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="mb-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <Card className="content-start">
             <CardHeader>
               <CardTitle>Funding</CardTitle>
@@ -86,12 +86,12 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
                 ) : (
                   <ul className="grid gap-2">
                     {funds.map((f) => (
-                      <li key={f.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-line pb-2 text-sm last:border-0">
-                        <span>
+                      <li key={f.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-b border-line pb-2 text-sm last:border-0">
+                        <span className="min-w-0">
                           <span className="font-medium">{FUND_KIND_LABEL[f.kind]}</span>
                           <span className="text-ink-soft"> · {formatDate(f.entry_date)} · {f.note} · {f.actor_name}</span>
                         </span>
-                        <span className={`tabular-nums ${f.kind === "repayment" ? "text-ink-soft" : ""}`}>
+                        <span className={`whitespace-nowrap text-right tabular-nums ${f.kind === "repayment" ? "text-ink-soft" : ""}`}>
                           {f.kind === "repayment" ? "−" : "+"}{formatSGD(Number(f.amount_cents))}
                         </span>
                       </li>
@@ -113,7 +113,7 @@ export default async function BudgetPage({ params }: PageProps<"/budgets/[budget
           )}
         </div>
       )}
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card>
           <CardHeader><CardTitle>Claims</CardTitle></CardHeader>
           <CardContent><ClaimsTable claims={claims} showClaimant empty="No claims against this budget yet." /></CardContent>
