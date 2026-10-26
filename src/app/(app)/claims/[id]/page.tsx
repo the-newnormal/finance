@@ -112,7 +112,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps<"/cl
         </Alert>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid content-start gap-6">
           <Card>
             <CardHeader className="gap-3">
