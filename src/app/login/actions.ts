@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 
@@ -58,4 +59,46 @@ export async function sendMagicLink(
   }
 
   return { status: "sent", email };
+}
+
+// Signs in with a password the member set on their Account page. Invite-only still: there is no
+// sign-up, and a deactivated member's login is banned (People page), so this refuses them too.
+// Every wrong email, wrong password or account without a password gets the same reply, so the
+// form can't be used to find out who has an account. On success the session cookies are set and
+// the member goes where they were headed.
+export async function signInWithPassword(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const typed = String(formData.get("email") ?? "");
+  const email = typed.trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const next = safeNextPath(String(formData.get("next") ?? ""));
+
+  if (!EMAIL_RE.test(email)) {
+    return { status: "error", message: "Enter a valid email address.", email: typed };
+  }
+  if (!password) {
+    return { status: "error", message: "Enter your password.", email: typed };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    if (error.code === "over_request_rate_limit") {
+      return { status: "error", message: "Too many attempts. Wait a minute, then try again.", email: typed };
+    }
+    if (!error.status) {
+      return { status: "error", message: "Couldn't reach the sign-in service. Try again.", email: typed };
+    }
+    if (error.code !== "invalid_credentials" && error.code !== "user_banned") {
+      console.error("signInWithPassword failed", { code: error.code, status: error.status });
+    }
+    return {
+      status: "error",
+      message: "That email and password don't match. If you haven't set a password, use an emailed link.",
+      email: typed,
+    };
+  }
+  redirect(next);
 }

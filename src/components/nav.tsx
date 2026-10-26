@@ -28,10 +28,10 @@ export function Nav({ links, name, roleLabel }: { links: { href: string; label: 
         <Link href="/claims" aria-label="Home"><Logo size={30} /></Link>
         <nav className="ml-4 hidden items-center gap-1 md:flex">{linkEls}</nav>
         <div className="ml-auto hidden items-center gap-3 md:flex">
-          <div className="text-right leading-tight">
+          <Link href="/account" className="rounded-lg px-1 text-right leading-tight hover:bg-ink/5" title="Account">
             <div className="text-sm font-medium">{name}</div>
             <div className="text-xs text-ink-soft">{roleLabel}</div>
-          </div>
+          </Link>
           <SignOut><Button type="submit" variant="ghost" size="icon" aria-label="Sign out"><LogOut /></Button></SignOut>
         </div>
         <Button variant="ghost" size="icon" className="ml-auto md:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
@@ -42,7 +42,7 @@ export function Nav({ links, name, roleLabel }: { links: { href: string; label: 
         <div className="border-t border-line px-4 pb-4 md:hidden">
           <nav className="flex flex-col gap-1 pt-3">{linkEls}</nav>
           <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-            <div className="text-sm"><div className="font-medium">{name}</div><div className="text-xs text-ink-soft">{roleLabel}</div></div>
+            <Link href="/account" onClick={() => setOpen(false)} className="text-sm"><div className="font-medium">{name}</div><div className="text-xs text-ink-soft">{roleLabel} · Account</div></Link>
             <SignOut><Button type="submit" variant="outline" size="sm"><LogOut /> Sign out</Button></SignOut>
           </div>
         </div>

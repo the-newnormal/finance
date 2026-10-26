@@ -1,7 +1,7 @@
 import { AuthApiError, AuthRetryableFetchError, AuthUnknownError } from "@supabase/supabase-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
-import { sendMagicLink } from "./actions";
+import { sendMagicLink, signInWithPassword } from "./actions";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
@@ -101,5 +101,40 @@ describe("sendMagicLink", () => {
       message: "Couldn't reach the sign-in service. Try again.",
       email: "ada@newnormal.sg",
     });
+  });
+});
+
+describe("signInWithPassword", () => {
+  const signInWithPasswordMock = vi.fn();
+  function login(email: string, password: string, next?: string) {
+    const form = new FormData();
+    form.set("email", email);
+    form.set("password", password);
+    if (next !== undefined) form.set("next", next);
+    return signInWithPassword({ status: "idle" }, form);
+  }
+  beforeEach(() => {
+    vi.mocked(createClient).mockResolvedValue({ auth: { signInWithPassword: signInWithPasswordMock } } as never);
+    signInWithPasswordMock.mockReset().mockResolvedValue({ data: {}, error: null });
+  });
+
+  it("signs in with a lowercased email and goes where they were headed", async () => {
+    await expect(login(" Ada@Normal.SG ", "correct horse battery", "/claims/new")).rejects.toThrow("NEXT_REDIRECT");
+    expect(signInWithPasswordMock).toHaveBeenCalledWith({ email: "ada@normal.sg", password: "correct horse battery" });
+  });
+
+  it("gives one reply for every wrong email or password", async () => {
+    signInWithPasswordMock.mockResolvedValue({ error: new AuthApiError("Invalid login credentials", 400, "invalid_credentials") });
+    expect(await login("ada@normal.sg", "wrong")).toEqual({
+      status: "error", email: "ada@normal.sg",
+      message: "That email and password don't match. If you haven't set a password, use an emailed link.",
+    });
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("says when to wait, and needs a password", async () => {
+    signInWithPasswordMock.mockResolvedValue({ error: new AuthApiError("rate limit", 429, "over_request_rate_limit") });
+    expect(await login("ada@normal.sg", "pw")).toMatchObject({ message: "Too many attempts. Wait a minute, then try again." });
+    expect(await login("ada@normal.sg", "")).toMatchObject({ message: "Enter your password." });
   });
 });
