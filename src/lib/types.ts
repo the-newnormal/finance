@@ -149,12 +149,6 @@ export interface ClaimRule {
   active: boolean;
 }
 
-export const RULE_SCOPE_LABEL: Record<ClaimRuleScope, string> = {
-  all: "Every claim",
-  reimbursement: "Reimbursements",
-  invoice: "Vendor invoices",
-};
-
 export type ReceiptVerdict = "looks_right" | "check_needed" | "unreadable";
 
 /** receipt_checks.findings (0008): what Claude read and compared. Shape: CheckResult in receipt-check.ts. */

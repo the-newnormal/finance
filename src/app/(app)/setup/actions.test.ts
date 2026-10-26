@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
-import { addCategory, deleteClaimRule, saveBudget, saveClaimRule, setCategoryActive, setCategoryGroup, setClaimRuleActive } from "./actions";
+import { addCategory, saveBudget, setCategoryActive, setCategoryGroup } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireFinance: vi.fn(async () => ({ id: "fin" })) }));
@@ -75,71 +75,6 @@ describe("saveBudget", () => {
     rpc.mockResolvedValue({ error: { code: "42501", message: "permission denied for table budgets" } });
     expect(await saveBudget(null, base)).toEqual({ ok: false, error: "The budget couldn't be saved." });
     expect(console.error).toHaveBeenCalledWith("setup budget failed", { code: "42501" });
-  });
-});
-
-describe("claim rules", () => {
-  const RULE = "90000000-0000-4000-8000-000000000001";
-  const rule = {
-    title: " What your receipt must show ", body: "Attach a receipt.", appliesTo: "reimbursement" as const,
-    linkLabel: "", linkUrl: "", sortOrder: 10, active: true,
-  };
-  // claim_rules: insert(row), update(row).eq(id).select(), delete().eq(id).select(), update(patch).eq(id).select().
-  let result: { data?: unknown; error: unknown };
-  const q: Record<string, ReturnType<typeof vi.fn>> = {};
-  beforeEach(() => {
-    result = { data: [{ id: RULE }], error: null };
-    for (const m of ["insert", "update", "delete", "eq", "select"]) {
-      q[m] = vi.fn(() => Object.assign(Promise.resolve(result), q));
-    }
-    vi.mocked(createClient).mockResolvedValue({ from: () => q } as never);
-  });
-
-  it("adds a rule, trimmed, with no link", async () => {
-    expect(await saveClaimRule(null, rule)).toEqual({ ok: true });
-    expect(q.insert).toHaveBeenCalledWith({
-      title: "What your receipt must show", body: "Attach a receipt.", applies_to: "reimbursement", sort_order: 10,
-      active: true, link_label: null, link_url: null,
-    });
-  });
-
-  it("edits a rule by id, and says when it's gone", async () => {
-    expect(await saveClaimRule(RULE, rule)).toEqual({ ok: true });
-    expect(q.eq).toHaveBeenCalledWith("id", RULE);
-    result = { data: [], error: null };
-    expect(await saveClaimRule(RULE, rule)).toEqual({ ok: false, error: "That rule wasn't found." });
-  });
-
-  it("needs the link's text and address together, and https", async () => {
-    expect(await saveClaimRule(null, { ...rule, linkLabel: "Policy" }))
-      .toEqual({ ok: false, error: "Give the link both its text and its address, or neither." });
-    expect(await saveClaimRule(null, { ...rule, linkLabel: "Policy", linkUrl: "javascript:alert(1)" }))
-      .toEqual({ ok: false, error: "The link must start with https://." });
-    expect(await saveClaimRule(null, { ...rule, linkLabel: "Policy", linkUrl: "http://example.org" }))
-      .toEqual({ ok: false, error: "The link must start with https://." });
-    expect(q.insert).not.toHaveBeenCalled();
-    expect(await saveClaimRule(null, { ...rule, linkLabel: "Policy", linkUrl: "https://example.org/pdpa" })).toEqual({ ok: true });
-    expect(q.insert.mock.calls[0][0]).toMatchObject({ link_label: "Policy", link_url: "https://example.org/pdpa" });
-  });
-
-  it("refuses an empty title or text", async () => {
-    expect((await saveClaimRule(null, { ...rule, title: "  " })).ok).toBe(false);
-    expect((await saveClaimRule(null, { ...rule, body: "" })).ok).toBe(false);
-    expect(q.insert).not.toHaveBeenCalled();
-  });
-
-  it("hides, shows and deletes a rule by id, and refuses a malformed id", async () => {
-    expect(await setClaimRuleActive(RULE, false)).toEqual({ ok: true });
-    expect(q.update).toHaveBeenCalledWith({ active: false });
-    expect(await deleteClaimRule(RULE)).toEqual({ ok: true });
-    expect(q.delete).toHaveBeenCalled();
-    expect(await deleteClaimRule("nope")).toEqual({ ok: false, error: "That rule wasn't found." });
-  });
-
-  it("says when the rule to hide, show or delete is already gone", async () => {
-    result = { data: [], error: null };
-    expect(await setClaimRuleActive(RULE, true)).toEqual({ ok: false, error: "That rule wasn't found." });
-    expect(await deleteClaimRule(RULE)).toEqual({ ok: false, error: "That rule wasn't found." });
   });
 });
 
