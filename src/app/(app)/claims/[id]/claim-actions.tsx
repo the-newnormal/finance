@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Paperclip } from "lucide-react";
 import { useState, useTransition } from "react";
+import { ACCEPT_ATTR, ACCEPTED, uploadable } from "@/lib/receipt-upload";
 import { createClient } from "@/lib/supabase/client";
 import { attachClaimFiles, decideClaim, markPaid } from "./actions";
 import { Alert } from "@/components/ui/alert";
@@ -106,9 +107,6 @@ export function MarkPaidForm({ claimId, accounts }: {
   );
 }
 
-// The types the receipts bucket accepts (supabase/migrations/0003_claims.sql).
-const ACCEPTED = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif", "application/pdf"];
-
 /** Finance adds receipts to an imported claim: uploaded to their own folder, then attached. */
 export function AttachFiles({ claimId, uid, room }: { claimId: string; uid: string; room: number }) {
   const router = useRouter();
@@ -116,13 +114,19 @@ export function AttachFiles({ claimId, uid, room }: { claimId: string; uid: stri
   const [error, setError] = useState<string | null>(null);
 
   async function add(list: FileList | null) {
-    const files = Array.from(list ?? []);
-    if (!files.length) return;
+    const chosen = Array.from(list ?? []);
+    if (!chosen.length) return;
     setError(null);
-    if (files.length > room) return setError(`You can add ${room} more file${room === 1 ? "" : "s"}.`);
-    const bad = files.find((f) => !ACCEPTED.includes(f.type) || f.size > 10 * 1024 * 1024);
-    if (bad) return setError(`${bad.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF under 10 MB.`);
+    if (chosen.length > room) return setError(`You can add ${room} more file${room === 1 ? "" : "s"}.`);
     setBusy(true);
+    // HEIC photos become JPEGs first (src/lib/receipt-upload.ts).
+    const files: File[] = [];
+    for (const f of chosen) {
+      try { files.push(await uploadable(f)); }
+      catch { setBusy(false); return setError(`${f.name} couldn't be converted to a JPEG. Attach a screenshot of it instead.`); }
+    }
+    const bad = files.find((f) => !ACCEPTED.includes(f.type) || f.size > 10 * 1024 * 1024);
+    if (bad) { setBusy(false); return setError(`${bad.name} isn't a JPEG, PNG, GIF, WebP, HEIC or PDF under 10 MB.`); }
     try {
       const storage = createClient().storage.from("receipts");
       const folder = `${uid}/${crypto.randomUUID()}`;
@@ -149,7 +153,7 @@ export function AttachFiles({ claimId, uid, room }: { claimId: string; uid: stri
       <label aria-disabled={busy} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-ink/25 bg-canvas/60 px-4 py-4 text-sm hover:bg-canvas aria-disabled:pointer-events-none aria-disabled:opacity-50">
         <Paperclip className="size-4 text-brand-deep" />
         <span className="font-medium">{busy ? "Uploading…" : "Add receipts"}</span>
-        <input type="file" multiple accept={ACCEPTED.join(",")} className="sr-only" disabled={busy}
+        <input type="file" multiple accept={ACCEPT_ATTR} className="sr-only" disabled={busy}
           onChange={(e) => { void add(e.target.files); e.target.value = ""; }} />
       </label>
     </div>

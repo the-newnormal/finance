@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { uploadable } from "@/lib/receipt-upload";
 import { createClient } from "@/lib/supabase/client";
 import { submitClaim } from "../actions";
 import { precheckClaim } from "../precheck-actions";
@@ -11,6 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: 
 vi.mock("../actions", () => ({ submitClaim: vi.fn(), forgetSavedPayout: vi.fn() }));
 vi.mock("../precheck-actions", () => ({ precheckClaim: vi.fn() }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/receipt-upload", async (original) => ({ ...await original(), uploadable: vi.fn() }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -31,6 +33,7 @@ async function render(aiCheck: boolean) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  vi.mocked(uploadable).mockImplementation(async (f) => f);
   el = document.createElement("div");
   document.body.append(el);
   root = createRoot(el);
@@ -45,8 +48,8 @@ afterEach(() => {
 const radio = (name: string) => [...el.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === name)!;
 const fileInputs = () => [...el.querySelectorAll<HTMLInputElement>('input[type="file"]')];
 
-async function attach(input: HTMLInputElement, name: string) {
-  Object.defineProperty(input, "files", { configurable: true, value: [new File(["x"], name, { type: "image/jpeg" })] });
+async function attach(input: HTMLInputElement, name: string, type = "image/jpeg") {
+  Object.defineProperty(input, "files", { configurable: true, value: [new File(["x"], name, { type })] });
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
 }
 
@@ -103,7 +106,7 @@ describe("ClaimForm", () => {
     expect(el.textContent).not.toContain("Anthropic");
     await render(true);
     expect(el.textContent).toContain("Receipt — AI will verify these mandatory fields:");
-    expect(el.textContent).toContain("JPG, PNG or PDF work best");
+    expect(el.textContent).toContain("reviewers may have it read them again");
   });
 
   it("won't send an invoice they paid without its proof of payment", async () => {
@@ -134,6 +137,25 @@ describe("ClaimForm", () => {
       attachmentPaths: [path], payout: { type: "paynow_mobile", name: "Tan Ah Kow", proxy: "9123 4567" }, agreed: true,
     }));
     expect(precheckClaim).not.toHaveBeenCalled();
+  });
+
+  it("uploads a HEIC photo as a JPEG, even when the browser gives it no type", async () => {
+    const jpeg = new File(["jpeg"], "IMG_1234.jpg", { type: "image/jpeg" });
+    vi.mocked(uploadable).mockResolvedValue(jpeg);
+    await fill();
+    await attach(fileInputs()[0], "IMG_1234.HEIC", "");
+    expect(el.textContent).toContain("IMG_1234.jpg");
+    const upload = vi.fn(async () => ({ error: null }));
+    vi.mocked(createClient).mockReturnValue({ storage: { from: () => ({ upload }) } } as never);
+    await submit();
+    expect(upload).toHaveBeenLastCalledWith(expect.stringMatching(/-IMG_1234\.jpg$/), jpeg, { contentType: "image/jpeg", upsert: false });
+  });
+
+  it("says which photo couldn't be converted, and leaves it out", async () => {
+    vi.mocked(uploadable).mockRejectedValue(new Error("unsupported"));
+    await attach(fileInputs()[0], "IMG_1234.HEIC", "image/heic");
+    expect(el.textContent).toContain("IMG_1234.HEIC couldn't be converted to a JPEG");
+    expect(el.querySelector('[aria-label="Remove IMG_1234.HEIC"]')).toBeNull();
   });
 
   it("with the AI check on, shows what to fix before sending, then sends it as it is if they choose", async () => {
