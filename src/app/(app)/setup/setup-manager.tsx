@@ -41,7 +41,7 @@ export function SetupManager({ divisions, categories, budgets, rules }: {
   divisions: Division[]; categories: Category[]; budgets: BudgetRow[]; rules: ClaimRule[];
 }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="grid content-start gap-6">
         <BudgetsCard budgets={budgets} divisions={divisions} categories={categories} />
         <RulesCard rules={rules} />

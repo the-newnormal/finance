@@ -207,7 +207,7 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
   ];
 
   return (
-    <form onSubmit={onSubmit} onChange={(e) => { if (CHECKED_FIELDS.has((e.target as Element).getAttribute("name") ?? "")) setChanged(true); }} className="grid gap-6 lg:grid-cols-[1fr_380px]">
+    <form onSubmit={onSubmit} onChange={(e) => { if (CHECKED_FIELDS.has((e.target as Element).getAttribute("name") ?? "")) setChanged(true); }} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
       {/* Locked while submitting (and while the AI check reads the files): what is sent is what is on screen. */}
       <fieldset disabled={busy} className="grid min-w-0 content-start gap-6">
         {canInvoice && (
