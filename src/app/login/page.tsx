@@ -23,7 +23,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         <div className="mb-8 flex justify-center"><Logo size={44} /></div>
         <div className="rounded-3xl border border-white/60 bg-white/70 p-6 shadow-[0_8px_40px_rgba(52,54,62,.08)] backdrop-blur-xl sm:p-8">
           <h1 className="font-serif text-2xl font-semibold">Sign in</h1>
-          <p className="mt-1 text-sm text-ink-soft">We&apos;ll email you a link. No password needed.</p>
+          <p className="mt-1 text-sm text-ink-soft">With an emailed link, or your password if you&apos;ve set one.</p>
           <LoginForm next={next} notice={error} />
         </div>
         <p className="mt-6 text-center text-xs text-ink-soft">
