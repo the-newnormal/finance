@@ -1,8 +1,11 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+// min-w-0: a card is often a grid item (pages stack them in grids), and a grid item otherwise grows
+// to its content's width, so a wide table would push the card past its column into its neighbour.
+// With it, the card keeps to its column and the table scrolls inside.
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-2xl border border-line bg-surface/90 shadow-[0_1px_2px_rgba(52,54,62,.04)] backdrop-blur", className)} {...props} />;
+  return <div className={cn("min-w-0 rounded-2xl border border-line bg-surface/90 shadow-[0_1px_2px_rgba(52,54,62,.04)] backdrop-blur", className)} {...props} />;
 }
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex flex-col gap-1 p-5 pb-3 sm:p-6 sm:pb-3", className)} {...props} />;
