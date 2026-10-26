@@ -6,7 +6,7 @@ Stack: **Next.js (App Router) + TypeScript + Tailwind + shadcn/ui + Supabase (Po
 
 ## Git
 - Never commit directly to `main`. Create a feature branch.
-- Claude may merge a PR without asking once all three hold on its latest commit: CodeRabbit has approved it, Qodo has reviewed it and left no open "Action required" finding, and every CI job passed. Hold it while the PR lists unticked "Before merging" steps.
+- Claude may merge a PR without asking once both hold on its latest commit: CodeRabbit has approved it, and every CI job passed. Qodo isn't waited for. Hold it while the PR lists unticked "Before merging" steps.
 - Never bypass CI or review. Don't post `@coderabbitai approve` unless the user asks; the approval must come from CodeRabbit's own review.
 - Small, focused PRs.
 - `main` is protected by the ruleset in `.github/rulesets/protect-main.json`, applied with `scripts/protect-main.sh` (the repo is public, so GitHub enforces it on the Free plan). Change it only by PR, then re-run the script; never loosen it in the GitHub UI.
