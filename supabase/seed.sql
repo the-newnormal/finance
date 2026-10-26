@@ -15,8 +15,7 @@ values ('00000000-0000-4000-8000-00000000ad01', 'finance@example.com', 'Local Fi
 
 insert into public.divisions (id, name) values ('10000000-0000-4000-8000-00000000d001', 'Community');
 
-insert into public.categories (name) values
-  ('Venue costs'), ('Logistics'), ('Food & beverages'), ('Printing & materials'), ('Transport'), ('Others');
+-- The categories, in their groups, come from migration 0011.
 
 insert into public.budgets (id, name, kind, division_id)
 values ('20000000-0000-4000-8000-00000000e001', 'Community Iftar 2026', 'event', '10000000-0000-4000-8000-00000000d001');
@@ -24,7 +23,7 @@ values ('20000000-0000-4000-8000-00000000e001', 'Community Iftar 2026', 'event',
 -- and has no guidelines.)
 insert into public.budget_categories (budget_id, category_id)
 select '20000000-0000-4000-8000-00000000e001', id from public.categories
-where name in ('Venue costs', 'Food & beverages', 'Transport');
+where name in ('Venue & Rental', 'F&B – Participants', 'Transport & Logistics');
 insert into public.budget_guidelines (budget_id, category_id, guideline_cents)
 select budget_id, category_id, 50000 from public.budget_categories
 where budget_id = '20000000-0000-4000-8000-00000000e001';

@@ -93,6 +93,31 @@ describe("ClaimForm", () => {
     expect(agreed.closest("label")!.textContent).toContain("I understand the processing timeline and terms above.");
   });
 
+  it("lists the budget's categories under their groups", async () => {
+    await act(async () => root.render(
+      <ClaimForm uid="u1" today="2026-10-20" canInvoice={false} goesStraightToFinance={false}
+        budgets={[{ id: "b1", name: "Youth Day", kind: "event", is_reserve: false }]}
+        provisions={[{ budget_id: "b1", category_id: "c1" }, { budget_id: "b1", category_id: "c2" }, { budget_id: "b1", category_id: "c3" }]}
+        categories={[
+          { id: "c1", name: "Transport & Logistics", category_group: "operations" },
+          { id: "c2", name: "F&B – Participants", category_group: "programme" },
+          { id: "c3", name: "Admin & Fees", category_group: "operations" },
+          { id: "c4", name: "Prizes & Gifts", category_group: "programme" },
+        ]}
+        savedPayout={null} rules={rules} aiCheck={false} />,
+    ));
+    const budget = el.querySelector<HTMLSelectElement>('select[name="budgetId"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(budget, "b1");
+      budget.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const groups = [...el.querySelectorAll<HTMLOptGroupElement>('select[name="categoryId"] optgroup')];
+    expect(groups.map((g) => [g.label, [...g.querySelectorAll("option")].map((o) => o.textContent)])).toEqual([
+      ["Programme", ["F&B – Participants"]],
+      ["Operations & Admin", ["Admin & Fees", "Transport & Logistics"]],
+    ]);
+  });
+
   it("asks for a receipt, or for an invoice and its proof of payment separately", async () => {
     expect(fileInputs()).toHaveLength(1);
     await act(async () => radio("Invoice I've paid").click());

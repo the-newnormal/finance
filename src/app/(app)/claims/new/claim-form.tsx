@@ -9,10 +9,11 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { byGroup } from "@/lib/categories";
 import { DOCUMENT_FIELDS, type DocumentKind } from "@/lib/receipt-fields";
 import { ACCEPT_ATTR, ACCEPTED, uploadable } from "@/lib/receipt-upload";
 import { createClient } from "@/lib/supabase/client";
-import { PAYOUT_LABEL, type ClaimRule, type PayoutType } from "@/lib/types";
+import { PAYOUT_LABEL, type Category, type ClaimRule, type PayoutType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -24,7 +25,7 @@ type Props = {
   budgets: { id: string; name: string; kind: "event" | "general"; is_reserve: boolean }[];
   /** Which categories each budget provisions: a claim may only use one of its budget's. */
   provisions: { budget_id: string; category_id: string }[];
-  categories: { id: string; name: string }[];
+  categories: Pick<Category, "id" | "name" | "category_group">[];
   savedPayout: { type: PayoutType; masked: string } | null;
   /** The rules Finance shows on this form (claim_rules), in order. */
   rules: Pick<ClaimRule, "id" | "title" | "body" | "applies_to" | "link_label" | "link_url">[];
@@ -245,7 +246,11 @@ export function ClaimForm({ uid, today, canInvoice, goesStraightToFinance, budge
               <Select name="categoryId" required value={categoryId} disabled={!budgetId}
                 onChange={(e) => setCategoryId(e.target.value)}>
                 <option value="" disabled>{budgetId ? "Choose one…" : "Choose a budget first"}</option>
-                {budgetCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {byGroup(budgetCategories).map((g) => (
+                  <optgroup key={g.label} label={g.label}>
+                    {g.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </optgroup>
+                ))}
               </Select>
             </Field>
             <Field label="Amount (SGD)">

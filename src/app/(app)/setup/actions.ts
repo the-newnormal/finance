@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { parseBudgetToCents } from "@/lib/money";
 import { requireFinance } from "@/lib/session";
+import { CATEGORY_GROUP_LABEL, type CategoryGroup } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
 import type { Result } from "../people/actions";
 
@@ -31,12 +32,25 @@ export async function addDivision(input: string): Promise<Result> {
   return done((await supabase.from("divisions").insert({ name: v.data })).error, "division");
 }
 
-export async function addCategory(input: string): Promise<Result> {
+const group = z.enum(Object.keys(CATEGORY_GROUP_LABEL) as [CategoryGroup, ...CategoryGroup[]]);
+
+export async function addCategory(input: string, inGroup: CategoryGroup): Promise<Result> {
   await requireFinance();
   const v = name(60).safeParse(input);
   if (!v.success) return { ok: false, error: "Enter a name of up to 60 characters." };
+  const g = group.safeParse(inGroup);
+  if (!g.success) return { ok: false, error: "Choose the category's group." };
   const supabase = await createClient();
-  return done((await supabase.from("categories").insert({ name: v.data })).error, "category");
+  return done((await supabase.from("categories").insert({ name: v.data, category_group: g.data })).error, "category");
+}
+
+// Moving a category moves what was claimed against it to the new group in reports.
+export async function setCategoryGroup(id: string, inGroup: CategoryGroup): Promise<Result> {
+  await requireFinance();
+  const g = group.safeParse(inGroup);
+  if (!g.success) return { ok: false, error: "Choose the category's group." };
+  const supabase = await createClient();
+  return done((await supabase.from("categories").update({ category_group: g.data }).eq("id", id)).error, "category");
 }
 
 export async function setCategoryActive(id: string, active: boolean): Promise<Result> {

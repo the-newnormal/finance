@@ -40,7 +40,7 @@ insert into public.divisions (id, name) values
 insert into public.division_leads (member_id, division_id) values
   ('0d100000-0000-4000-8000-000000000002', '0d200000-0000-4000-8000-000000000001'),
   ('0d100000-0000-4000-8000-000000000003', '0d200000-0000-4000-8000-000000000002');
-insert into public.categories (id, name) values ('0d300000-0000-4000-8000-000000000001', 'RC Transport');
+insert into public.categories (id, name, category_group) values ('0d300000-0000-4000-8000-000000000001', 'RC Transport', 'operations');
 insert into public.budgets (id, name, division_id) values
   ('0d400000-0000-4000-8000-000000000001', 'RC Budget', '0d200000-0000-4000-8000-000000000001');
 insert into public.budget_categories (budget_id, category_id) values

@@ -19,10 +19,22 @@ export interface Division {
   name: string;
 }
 
+/** The five category groups (0011), keyed as the database names them, in their order. */
+export const CATEGORY_GROUP_LABEL = {
+  venue_production: "Venue & Production",
+  programme: "Programme",
+  people: "People",
+  marketing: "Marketing & Brand",
+  operations: "Operations & Admin",
+} as const;
+export type CategoryGroup = keyof typeof CATEGORY_GROUP_LABEL;
+
 export interface Category {
   id: string;
   name: string;
   active: boolean;
+  /** null only for a category from before 0011 that Finance hasn't grouped yet. */
+  category_group: CategoryGroup | null;
 }
 
 export interface Budget {

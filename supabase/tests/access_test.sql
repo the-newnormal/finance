@@ -57,10 +57,10 @@ insert into public.division_leads (member_id, division_id) values
   ('0b000000-0000-4000-8000-000000000001', '0d000000-0000-4000-8000-000000000001'),
   ('0b000000-0000-4000-8000-000000000002', '0d000000-0000-4000-8000-000000000002');
 
-insert into public.categories (id, name) values
-  ('0f000000-0000-4000-8000-000000000001', 'T Transport'),
-  ('0f000000-0000-4000-8000-000000000002', 'T Food'),
-  ('0f000000-0000-4000-8000-000000000003', 'T Venue');
+insert into public.categories (id, name, category_group) values
+  ('0f000000-0000-4000-8000-000000000001', 'T Transport', 'operations'),
+  ('0f000000-0000-4000-8000-000000000002', 'T Food', 'programme'),
+  ('0f000000-0000-4000-8000-000000000003', 'T Venue', 'venue_production');
 
 insert into public.budgets (id, name, kind, division_id, active) values
   ('0e000000-0000-4000-8000-000000000001', 'T Budget One', 'event', '0d000000-0000-4000-8000-000000000001', true),
@@ -138,7 +138,7 @@ select is_empty($$ select * from public.bank_accounts $$, 'volunteers see no ban
 
 select throws_ok($$ insert into public.divisions (name) values ('T Vol Division') $$, '42501', null,
   'volunteers cannot add divisions');
-select throws_ok($$ insert into public.categories (name) values ('T Vol Category') $$, '42501', null,
+select throws_ok($$ insert into public.categories (name, category_group) values ('T Vol Category', 'programme') $$, '42501', null,
   'volunteers cannot add categories');
 select results_eq($$ with u as (update public.budgets set name = 'T Hacked' where name like 'T %' returning 1)
                      select count(*)::int from u $$, $$ values (0) $$, 'volunteers cannot rename budgets');
@@ -198,7 +198,7 @@ select throws_ok($$ select * from public.claim_payout_enc(pg_temp.claim('T v1 ta
 
 select throws_ok($$ insert into public.divisions (name) values ('T Lead Division') $$, '42501', null,
   'leads cannot add divisions');
-select throws_ok($$ insert into public.categories (name) values ('T Lead Category') $$, '42501', null,
+select throws_ok($$ insert into public.categories (name, category_group) values ('T Lead Category', 'programme') $$, '42501', null,
   'leads cannot add categories');
 select throws_ok($$ insert into public.budgets (name, division_id) values ('T Lead Budget', '0d000000-0000-4000-8000-000000000001') $$,
   '42501', null, 'leads cannot add budgets');
@@ -251,7 +251,7 @@ select lives_ok($$ insert into public.divisions (id, name) values ('0d000000-000
   'Finance adds divisions');
 select lives_ok($$ update public.divisions set name = 'T Division 3' where id = '0d000000-0000-4000-8000-000000000003' $$,
   'Finance renames divisions');
-select lives_ok($$ insert into public.categories (id, name) values ('0f000000-0000-4000-8000-000000000004', 'T Printing') $$,
+select lives_ok($$ insert into public.categories (id, name, category_group) values ('0f000000-0000-4000-8000-000000000004', 'T Printing', 'programme') $$,
   'Finance adds categories');
 select results_eq($$ with u as (update public.categories set active = false where id = '0f000000-0000-4000-8000-000000000004' returning 1)
                      select count(*)::int from u $$, $$ values (1) $$, 'Finance updates categories');

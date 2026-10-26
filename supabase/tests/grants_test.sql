@@ -110,7 +110,7 @@ from unnest(array['private.members_before_update()', 'private.budgets_before_upd
                   'private.sgd(bigint)', 'private.on_day(timestamp with time zone, date)',
                   'private.budget_available(uuid)', 'private.budget_owed(uuid)', 'private.reserve_available()',
                   'private.fundable_budget(uuid)', 'private.check_fund(bigint, date, text)',
-                  'private.bank_entries_sync_grant()']) f;
+                  'private.bank_entries_sync_grant()', 'private.categories_before_write()']) f;
 
 select * from finish();
 rollback;

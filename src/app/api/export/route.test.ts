@@ -43,7 +43,7 @@ beforeEach(() => {
   rows = {
     claims: [claim("a", "2026-01-05T02:00:00Z"), claim("b", "2026-02-05T02:00:00Z")],
     budgets: [{ id: BUDGET, name: "Iftar" }],
-    categories: [{ id: "c1", name: "Transport" }],
+    categories: [{ id: "c1", name: "Transport & Logistics", category_group: "operations" }],
     // Paid on 31 Jan and 1 Mar in Singapore.
     claim_events: [{ claim_id: "a", at: "2026-01-31T03:00:00Z" }, { claim_id: "b", at: "2026-02-28T17:00:00Z" }],
   };
@@ -61,6 +61,12 @@ describe("GET /api/export", () => {
     expect(res.status).toBe(200);
     expect(filters("claims")).toEqual([]);
     expect((await res.text()).split("\r\n")).toHaveLength(3); // header and two claims
+  });
+
+  it("gives each claim its category's group, then its category", async () => {
+    const [header, first] = (await (await get()).text()).split("\r\n");
+    expect(header).toContain('"budget","category_group","category","purchase_date"');
+    expect(first).toContain('"Iftar","Operations & Admin","Transport & Logistics"');
   });
 
   it("refuses a malformed filter instead of exporting the wrong claims", async () => {

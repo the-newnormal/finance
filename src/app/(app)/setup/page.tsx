@@ -13,7 +13,7 @@ export default async function SetupPage() {
   // Every row: an edit form missing a guideline would save over (or drop) the real one.
   const [divisions, categories, budgets, guidelines, rules] = await Promise.all([
     fetchAll<Division>((f, t) => supabase.from("divisions").select("id, name").order("id").range(f, t)),
-    fetchAll<Category>((f, t) => supabase.from("categories").select("id, name, active").order("id").range(f, t)),
+    fetchAll<Category>((f, t) => supabase.from("categories").select("id, name, active, category_group").order("id").range(f, t)),
     fetchAll<Budget>((f, t) => supabase.from("budgets").select("id, name, kind, division_id, active, is_reserve").eq("is_reserve", false).order("id").range(f, t)),
     fetchAll<{ budget_id: string; category_id: string; guideline_cents: number }>((f, t) =>
       supabase.from("budget_guidelines").select("budget_id, category_id, guideline_cents").order("budget_id").order("category_id").range(f, t)),
@@ -30,7 +30,7 @@ export default async function SetupPage() {
 
   return (
     <>
-      <PageHeader title="Setup" description="Divisions, claim categories, the budgets and events inside each division, and the rules the claim form shows." />
+      <PageHeader title="Setup" description="Divisions, claim categories and their groups, the budgets and events inside each division, and the rules the claim form shows." />
       <SetupManager divisions={byName(divisions)} categories={byName(categories)} budgets={rows} rules={rules} />
     </>
   );

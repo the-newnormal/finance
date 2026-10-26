@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createClient } from "@/lib/supabase/server";
-import { deleteClaimRule, saveBudget, saveClaimRule, setClaimRuleActive } from "./actions";
+import { addCategory, deleteClaimRule, saveBudget, saveClaimRule, setCategoryActive, setCategoryGroup, setClaimRuleActive } from "./actions";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/session", () => ({ requireFinance: vi.fn(async () => ({ id: "fin" })) }));
@@ -140,5 +140,43 @@ describe("claim rules", () => {
     result = { data: [], error: null };
     expect(await setClaimRuleActive(RULE, true)).toEqual({ ok: false, error: "That rule wasn't found." });
     expect(await deleteClaimRule(RULE)).toEqual({ ok: false, error: "That rule wasn't found." });
+  });
+});
+
+describe("categories", () => {
+  const CATEGORY = "70000000-0000-4000-8000-000000000003";
+  let error: { code: string; message: string } | null;
+  const insert = vi.fn(async () => ({ error }));
+  const eq = vi.fn(async () => ({ error }));
+  const update = vi.fn(() => ({ eq }));
+
+  beforeEach(() => {
+    error = null;
+    vi.clearAllMocks();
+    vi.mocked(createClient).mockResolvedValue({ from: () => ({ insert, update }) } as never);
+  });
+
+  it("adds a category in its group", async () => {
+    expect(await addCategory(" Prizes & Gifts ", "programme")).toEqual({ ok: true });
+    expect(insert).toHaveBeenCalledWith({ name: "Prizes & Gifts", category_group: "programme" });
+  });
+
+  it("refuses a category without a group, or with one that isn't a group", async () => {
+    expect(await addCategory("Prizes & Gifts", "" as never)).toEqual({ ok: false, error: "Choose the category's group." });
+    expect(await setCategoryGroup(CATEGORY, "food" as never)).toEqual({ ok: false, error: "Choose the category's group." });
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("moves a category to another group", async () => {
+    expect(await setCategoryGroup(CATEGORY, "people")).toEqual({ ok: true });
+    expect(update).toHaveBeenCalledWith({ category_group: "people" });
+    expect(eq).toHaveBeenCalledWith("id", CATEGORY);
+  });
+
+  it("says why a category not grouped yet can't be hidden", async () => {
+    error = { code: "P0001", message: "Choose a group for the category first, so reports count its spending." };
+    expect(await setCategoryActive(CATEGORY, false))
+      .toEqual({ ok: false, error: "Choose a group for the category first, so reports count its spending." });
   });
 });

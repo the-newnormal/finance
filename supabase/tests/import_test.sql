@@ -30,9 +30,9 @@ insert into public.members (id, email, name, role) values
 insert into public.divisions (id, name) values ('0a200000-0000-4000-8000-000000000001', 'I Division');
 insert into public.division_leads (member_id, division_id) values
   ('0a100000-0000-4000-8000-000000000002', '0a200000-0000-4000-8000-000000000001');
-insert into public.categories (id, name) values
-  ('0a300000-0000-4000-8000-000000000001', 'I Food'),
-  ('0a300000-0000-4000-8000-000000000002', 'I Venue');
+insert into public.categories (id, name, category_group) values
+  ('0a300000-0000-4000-8000-000000000001', 'I Food', 'programme'),
+  ('0a300000-0000-4000-8000-000000000002', 'I Venue', 'venue_production');
 insert into public.budgets (id, name, division_id) values
   ('0a400000-0000-4000-8000-000000000001', 'I Budget', '0a200000-0000-4000-8000-000000000001');
 insert into public.budget_categories (budget_id, category_id) values

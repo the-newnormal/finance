@@ -25,8 +25,8 @@ export default async function NewClaimPage() {
       supabase.from("budgets").select("id, name, kind, is_reserve").eq("active", true).order("id").range(from, to)),
     fetchAll<{ budget_id: string; category_id: string }>((from, to) =>
       supabase.from("budget_categories").select("budget_id, category_id").order("budget_id").order("category_id").range(from, to)),
-    fetchAll<Pick<Category, "id" | "name">>((from, to) =>
-      supabase.from("categories").select("id, name").eq("active", true).order("id").range(from, to)),
+    fetchAll<Pick<Category, "id" | "name" | "category_group">>((from, to) =>
+      supabase.from("categories").select("id, name, category_group").eq("active", true).order("id").range(from, to)),
     supabase.from("member_payouts").select("payout_type, payout_masked").eq("member_id", me.id).maybeSingle(),
     // The rules Finance shows (RLS: shown ones only, except to Finance, so filter here too). They're
     // guidance: if they can't be read, the form still works without them.

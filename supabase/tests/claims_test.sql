@@ -57,10 +57,10 @@ insert into public.division_leads (member_id, division_id) values
   ('0b000000-0000-4000-8000-000000000001', '0d000000-0000-4000-8000-000000000001'),
   ('0b000000-0000-4000-8000-000000000002', '0d000000-0000-4000-8000-000000000002');
 
-insert into public.categories (id, name) values
-  ('0f000000-0000-4000-8000-000000000001', 'T Transport'),
-  ('0f000000-0000-4000-8000-000000000002', 'T Food'),
-  ('0f000000-0000-4000-8000-000000000003', 'T Venue');
+insert into public.categories (id, name, category_group) values
+  ('0f000000-0000-4000-8000-000000000001', 'T Transport', 'operations'),
+  ('0f000000-0000-4000-8000-000000000002', 'T Food', 'programme'),
+  ('0f000000-0000-4000-8000-000000000003', 'T Venue', 'venue_production');
 
 insert into public.budgets (id, name, kind, division_id, active) values
   ('0e000000-0000-4000-8000-000000000001', 'T Budget One', 'event', '0d000000-0000-4000-8000-000000000001', true),
