@@ -3,8 +3,12 @@ import type { ClaimStatus } from "@/lib/types";
 /** Which date a date range applies to: when the claim was submitted, or when it was paid. */
 export type ExportDateField = "submitted" | "paid";
 
+/** One row per claim, or per item it bought (0012), for spending by category. */
+export type ExportRows = "claims" | "items";
+
 /** The claims export's filters (/api/export). null means "any". Dates are Singapore calendar dates. */
 export interface ExportFilters {
+  rows: ExportRows;
   from: string | null;
   to: string | null;
   dates: ExportDateField;
@@ -39,7 +43,9 @@ export function parseExportFilters(params: URLSearchParams): { ok: true; filters
   if ((divisionId && !UUID.test(divisionId)) || (budgetId && !UUID.test(budgetId))) return { ok: false, error: "Choose a division and budget from the lists." };
   const status = get("status");
   if (status && !STATUSES.includes(status as ClaimStatus)) return { ok: false, error: "Choose a status from the list." };
-  return { ok: true, filters: { from, to, dates, divisionId, budgetId, status: status as ClaimStatus | null } };
+  const rows = get("rows") ?? "claims";
+  if (rows !== "claims" && rows !== "items") return { ok: false, error: "Choose a row per claim or per item." };
+  return { ok: true, filters: { rows, from, to, dates, divisionId, budgetId, status: status as ClaimStatus | null } };
 }
 
 /** The moment a Singapore calendar day starts, as an ISO timestamp (+08:00, no daylight saving). */

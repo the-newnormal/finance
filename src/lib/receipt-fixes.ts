@@ -1,4 +1,4 @@
-import type { ReceiptCheck } from "@/lib/types";
+import type { ReceiptVerdict } from "@/lib/types";
 
 // What an AI receipt check found that the claimant can fix, in words for them: mandatory fields
 // the documents don't show or show unclearly, a total or date that doesn't match the claim, what
@@ -8,13 +8,29 @@ import type { ReceiptCheck } from "@/lib/types";
 
 const DOCUMENT: Record<string, string> = { receipt: "receipt", paid_invoice: "invoice", vendor_invoice: "invoice" };
 
+/** What the fixes are worked out from: a reviewer's saved check, or a claimant's read of their files. */
+export type FixableCheck = {
+  verdict: ReceiptVerdict;
+  findings: {
+    document_kind?: string;
+    fields?: { field: string; shown: string }[];
+    documents?: { file: string; kind: string }[];
+    amount_matches?: string;
+    date_matches?: string;
+    missing?: string[];
+    skipped?: { name: string; reason: string }[];
+    /** The reviewer's: never a fix. */
+    concerns?: string[];
+  };
+};
+
 const sentence = (s: string) => {
   const t = s.trim();
   return /[.!?]$/.test(t) ? t : `${t}.`;
 };
 
 /** The fixes, one sentence each; none when the check found nothing the claimant can fix. */
-export function receiptFixes(check: Pick<ReceiptCheck, "verdict" | "findings">): string[] {
+export function receiptFixes(check: FixableCheck): string[] {
   if (check.verdict === "looks_right") return [];
   const f = check.findings;
   const doc = DOCUMENT[f.document_kind ?? ""];
@@ -42,7 +58,7 @@ export function receiptFixes(check: Pick<ReceiptCheck, "verdict" | "findings">):
  * whole sentences as fit decide_claim's 500 characters, in order (one too long is left out and the
  * rest still tried). Null when there's nothing to fix.
  */
-export function rejectionReason(check: Pick<ReceiptCheck, "verdict" | "findings">, max = 500): string | null {
+export function rejectionReason(check: FixableCheck, max = 500): string | null {
   const fixes = receiptFixes(check);
   let reason = "";
   for (const fix of fixes) {

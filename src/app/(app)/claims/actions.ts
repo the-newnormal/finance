@@ -39,6 +39,12 @@ const claimInput = z.object({
   agreed: z.boolean(),
   /** Made once per claim by the form; a retry with the same id returns the claim already made. */
   submissionId: z.uuid(),
+  /** What was bought, as the AI read it from the files when they were attached (precheckClaim, 0012). */
+  items: z.array(z.object({
+    description: z.string().trim().min(1).max(200),
+    amount_cents: z.number().int().min(-100_000_000).max(100_000_000).nullable(),
+    category_id: z.uuid().nullable(),
+  })).min(1).max(100).optional(),
 });
 
 export type ClaimInput = z.input<typeof claimInput>;
@@ -119,6 +125,8 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
       // The form tells claimants about the AI receipt check exactly when it's on, and only claims
       // that say so are checked (0008). Sent only then, so claims go in before 0008 is applied.
       ...(receiptCheckEnabled() ? { ai_check_notice: true } : {}),
+      // Only the AI reads items, and only while the check is on.
+      ...(receiptCheckEnabled() && v.items ? { items: v.items } : {}),
     })
     .select("id, status")
     .single();

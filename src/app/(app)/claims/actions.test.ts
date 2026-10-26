@@ -127,6 +127,17 @@ describe("submitClaim", () => {
     expect((tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[1][0]).toMatchObject({ ai_check_notice: true });
   });
 
+  it("sends the items the AI read with the claim, only while the check is on", async () => {
+    const items = [{ description: "Bottled water", amount_cents: 1200, category_id: "70000000-0000-4000-8000-000000000001" }];
+    await submitClaim({ ...base, items });
+    expect((tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]).not.toHaveProperty("items");
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-test");
+    await submitClaim({ ...base, items, submissionId: "60000000-0000-4000-8000-000000000002" });
+    expect((tables.claims.insert as ReturnType<typeof vi.fn>).mock.calls[1][0]).toMatchObject({ items });
+    expect(await submitClaim({ ...base, items: [{ ...items[0], amount_cents: 12.5 }] })).toMatchObject({ ok: false });
+    expect(tables.claims.insert).toHaveBeenCalledTimes(2);
+  });
+
   it("refuses a future purchase date", async () => {
     expect(await submitClaim({ ...base, expenseDate: "2999-01-01" })).toEqual({ ok: false, error: "The purchase date can't be in the future." });
     expect(tables.claims.insert).not.toHaveBeenCalled();

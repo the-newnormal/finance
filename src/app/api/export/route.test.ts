@@ -69,6 +69,25 @@ describe("GET /api/export", () => {
     expect(first).toContain('"Iftar","Operations & Admin","Transport & Logistics"');
   });
 
+  it("gives a row per item bought, each with its share of the claim under its own category, and a claim without items whole", async () => {
+    rows.categories.push({ id: "c2", name: "F&B – Participants", category_group: "programme" });
+    rows.claims = [
+      { ...claim("a", "2026-01-05T02:00:00Z"), amount_cents: 2180, items: [
+        { description: "Water", amount_cents: 1200, category_id: "c2" },
+        { description: "Taxi", amount_cents: 800, category_id: null },
+      ] },
+      claim("b", "2026-02-05T02:00:00Z"),
+    ];
+    const res = await get("?rows=items");
+    expect(res.headers.get("Content-Disposition")).toContain("nn-items-");
+    const [header, ...lines] = (await res.text()).split("\r\n");
+    expect(header).toBe('"claim_id","submitted","kind","status","claimant","budget","paid_on","item","item_amount_sgd","category_group","category","spend_sgd"');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('"(not itemised)","","Operations & Admin","Transport & Logistics","15.00"');
+    expect(lines[1]).toContain('"Water","12.00","Programme","F&B – Participants","13.08"');
+    expect(lines[2]).toContain('"Taxi","8.00","Operations & Admin","Transport & Logistics","8.72"');
+  });
+
   it("refuses a malformed filter instead of exporting the wrong claims", async () => {
     const res = await get("?from=2026-04-01&to=2026-03-01");
     expect(res.status).toBe(400);
