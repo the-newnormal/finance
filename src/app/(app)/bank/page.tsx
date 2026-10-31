@@ -60,7 +60,10 @@ export default async function BankPage({ searchParams }: PageProps<"/bank">) {
         .order("id").range(from, to));
       for (const r of editRows) {
         const id = Number(r.entry_id);
-        edits.set(id, [...(edits.get(id) ?? []), r as unknown as EntryEdit]);
+        // Appended in place: copying each entry's list for every edit would grow as its square.
+        const list = edits.get(id);
+        if (list) list.push(r as unknown as EntryEdit);
+        else edits.set(id, [r as unknown as EntryEdit]);
       }
     } catch (e) {
       console.error("ledger edits read failed", { code: e instanceof Error ? e.message : "unknown" });

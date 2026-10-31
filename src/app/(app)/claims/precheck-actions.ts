@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { isOwnReceiptPath } from "@/lib/receipt-upload";
 import type { ClaimItem, ReadDocument } from "@/lib/claim-items";
 import { receiptCheckEnabled } from "@/lib/receipt-check";
 import { readClaimFiles } from "@/lib/receipt-check-claim";
@@ -32,7 +33,7 @@ export async function precheckClaim(input: PrecheckInput): Promise<PrecheckResul
   const parsed = precheckInput.safeParse(input);
   if (!parsed.success) return { ok: false };
   const v = parsed.data;
-  if (v.attachmentPaths.some((p) => !p.startsWith(`${me.id}/`) || p.includes(".."))) return { ok: false };
+  if (!v.attachmentPaths.every((p) => isOwnReceiptPath(p, me.id))) return { ok: false };
 
   const read = await readClaimFiles(await createClient(), { kind: v.kind, attachment_paths: v.attachmentPaths });
   if (!read.ok) {

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { isEmailAddress } from "@/lib/auth/email-address";
 import { safeNextPath } from "@/lib/auth/safe-next";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,7 +10,6 @@ export type LoginState =
   | { status: "sent"; email: string }
   | { status: "error"; message: string; email: string };
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // The link's origin comes from configuration, never from the request: a forged Origin or Host
 // header could otherwise point someone's one-time token at another site.
@@ -27,7 +27,7 @@ export async function sendMagicLink(
   const email = typed.trim().toLowerCase();
   const next = safeNextPath(String(formData.get("next") ?? ""));
 
-  if (!EMAIL_RE.test(email)) {
+  if (!isEmailAddress(email)) {
     return { status: "error", message: "Enter a valid email address.", email: typed };
   }
 
@@ -75,7 +75,7 @@ export async function signInWithPassword(
   const password = String(formData.get("password") ?? "");
   const next = safeNextPath(String(formData.get("next") ?? ""));
 
-  if (!EMAIL_RE.test(email)) {
+  if (!isEmailAddress(email)) {
     return { status: "error", message: "Enter a valid email address.", email: typed };
   }
   if (!password) {
