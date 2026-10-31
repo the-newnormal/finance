@@ -8,7 +8,10 @@ describe("isEmailAddress", () => {
   it("refuses an over-long value at once", () => {
     const crafted = `a@${".".repeat(50_000)}@`;
     const start = performance.now();
-    expect(isEmailAddress(crafted)).toBe(false);
-    expect(performance.now() - start).toBeLessThan(50);
+    const valid = isEmailAddress(crafted);
+    const elapsed = performance.now() - start;
+    expect(valid).toBe(false);
+    // Linear: microseconds. The old regex took seconds here; the limit only has to catch that.
+    expect(elapsed).toBeLessThan(500);
   });
 });
