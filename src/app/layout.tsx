@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Newsreader } from "next/font/google";
 import "./globals.css";
 
@@ -9,7 +9,12 @@ export const metadata: Metadata = {
   title: { default: "Normal Finance", template: "%s · Normal Finance" },
   description: "Claims, budgets and reimbursements for Normal.",
   robots: { index: false, follow: false },
+  // Added to an iPhone's home screen, it opens full screen with this name (the manifest covers Android).
+  appleWebApp: { capable: true, title: "Normal Finance", statusBarStyle: "default" },
 };
+
+// The browser's bar, and the installed app's title bar, take the page's background colour.
+export const viewport: Viewport = { themeColor: "#f7f5f1" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
