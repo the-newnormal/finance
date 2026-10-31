@@ -38,7 +38,7 @@ pnpm typecheck && pnpm lint && pnpm test
 
 ## Deploying (Supabase + Vercel)
 1. **Supabase project** (region Singapore). Link and push the schema: `pnpm supabase link --project-ref <ref>` then `pnpm supabase db push`.
-2. **Authentication → Sign In / Providers:** Email on, **"Allow new users to sign up" off**. No other providers. Under **Email**, minimum password length **12**; turn on leaked-password protection if your plan has it. Members set a password on their Account page; magic links keep working.
+2. **Authentication → Sign In / Providers:** Email on, **"Allow new users to sign up" off**. No other providers. Under **Email**, minimum password length **12**, **Secure password change** on; turn on leaked-password protection if your plan has it. Members set a password on their Account page; magic links keep working.
 3. **Authentication → URL Configuration:** Site URL = the production URL, with no trailing slash (the sign-in emails add `/email-logo.png` to it); redirect URLs include `<production URL>/auth/callback**`.
 4. **Authentication → Emails → Templates:** paste `supabase/templates/magic-link.html` (Magic link) and `supabase/templates/invite.html` (Invite user). Supabase's default links don't work with `/auth/callback`. They match the app's own emails (`src/lib/email-template.ts`), so change both together.
 5. **Authentication → Emails → SMTP Settings:** your sender (e.g. Gmail SMTP with an app password). Supabase's built-in sender only mails your Supabase team, two emails an hour.

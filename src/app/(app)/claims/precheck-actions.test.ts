@@ -16,7 +16,7 @@ vi.mock("@/lib/receipt-check", async (importOriginal) => ({
 const VOL = "00000000-0000-4000-8000-000000000001";
 const WATER = "20000000-0000-4000-8000-000000000001";
 const CUPS = "20000000-0000-4000-8000-000000000002";
-const input = { kind: "reimbursement" as const, attachmentPaths: [`${VOL}/x/3f2a9c1e-receipt.jpg`] };
+const input = { kind: "reimbursement" as const, attachmentPaths: [`${VOL}/6f1c2a9e-0b7d-4c3e-9a5f-1d2e3f4a5b6c/3f2a9c1e-receipt.jpg`] };
 let files: Record<string, Blob>;
 let tables: Record<string, unknown[]>;
 const download = vi.fn();
@@ -83,7 +83,7 @@ describe("precheckClaim", () => {
   });
 
   it("tells them about a photo it can't read, without calling the AI", async () => {
-    const zip = `${VOL}/x/3f2a9c1e-scan.zip`;
+    const zip = `${VOL}/6f1c2a9e-0b7d-4c3e-9a5f-1d2e3f4a5b6c/3f2a9c1e-scan.zip`;
     files = { [zip]: new Blob([new Uint8Array(4)], { type: "application/zip" }) };
     expect(await precheckClaim({ ...input, attachmentPaths: [zip] })).toEqual({
       ok: true, fixes: ["Couldn't read scan.zip: this kind of file can't be read."], documents: [], items: [],
@@ -92,9 +92,11 @@ describe("precheckClaim", () => {
   });
 
   it("only reads files in the claimant's own folder", async () => {
-    const theirs = "00000000-0000-4000-8000-000000000009/x/3f2a9c1e-receipt.jpg";
+    const theirs = "00000000-0000-4000-8000-000000000009/6f1c2a9e-0b7d-4c3e-9a5f-1d2e3f4a5b6c/3f2a9c1e-receipt.jpg";
     expect(await precheckClaim({ ...input, attachmentPaths: [theirs] })).toEqual({ ok: false });
     expect(await precheckClaim({ ...input, attachmentPaths: [`${VOL}/../x.jpg`] })).toEqual({ ok: false });
+    // An encoded parent segment, which the download's URL handling would resolve to another folder.
+    expect(await precheckClaim({ ...input, attachmentPaths: [`${VOL}/6f1c2a9e-0b7d-4c3e-9a5f-1d2e3f4a5b6c/%2e%2e%2f%2e%2e%2fx.jpg`] })).toEqual({ ok: false });
     expect(await precheckClaim({ ...input, attachmentPaths: [] })).toEqual({ ok: false });
     expect(download).not.toHaveBeenCalled();
   });
