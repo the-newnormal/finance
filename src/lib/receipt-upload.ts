@@ -17,46 +17,49 @@ export function isHeic(file: File): boolean {
   return (!type || type === "application/octet-stream") && /\.hei[cf]$/i.test(file.name);
 }
 
-/** The largest HEIC photo converted: well above any phone's (a 48 MP iPhone photo is about 8 MB). */
-export const MAX_HEIC_BYTES = 25 * 1024 * 1024;
-/** The most pixels converted: a 48 MP photo, with room. The converter allocates them all up front. */
-export const MAX_HEIC_PIXELS = 60_000_000;
+export { MAX_HEIC_BYTES, MAX_HEIC_PIXELS } from "./receipt-heic-limits";
+import { MAX_HEIC_BYTES } from "./receipt-heic-limits";
+
 const HEIC_TIMEOUT_MS = 30_000;
 
-/**
- * A HEIC file's largest image size, read from its 'ispe' (image spatial extent) boxes in the first
- * megabyte, where the file's metadata lives. null if there are none, so the file can't be checked.
- */
-export function heicPixels(bytes: Uint8Array): number | null {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let most: number | null = null;
-  // An ispe box: "ispe", then 4 bytes of version and flags, then width and height (32-bit, big-endian).
-  for (let i = 0; i + 16 <= bytes.length; i++) {
-    if (bytes[i] !== 0x69 || bytes[i + 1] !== 0x73 || bytes[i + 2] !== 0x70 || bytes[i + 3] !== 0x65) continue;
-    const pixels = view.getUint32(i + 8) * view.getUint32(i + 12);
-    most = Math.max(most ?? 0, pixels);
-  }
-  return most;
-}
-
-/**
- * A HEIC or HEIF photo as a JPEG, named for it ("IMG_1234.HEIC" → "IMG_1234.jpg"). Throws if it
- * can't be read. The converter allocates the whole decoded image before reading any of it, so a
- * small crafted file claiming a huge size could freeze the tab: the file's size and its declared
- * pixel count are checked first, and a conversion taking more than 30 seconds is given up on.
- */
+/** A HEIC or HEIF photo as a JPEG, named for it. */
 export async function heicToJpeg(file: File): Promise<File> {
   if (file.size > MAX_HEIC_BYTES) throw new Error("heic too large");
-  const pixels = heicPixels(new Uint8Array(await file.slice(0, 1024 * 1024).arrayBuffer()));
-  if (pixels === null || pixels > MAX_HEIC_PIXELS) throw new Error("heic size unknown or too large");
-  const { heicTo } = await import("heic-to"); // about 3 MB, so only loaded when a HEIC photo is chosen
+  const buffer = await file.arrayBuffer();
+  const worker = new Worker(new URL("./receipt-heic-worker.ts", import.meta.url), { type: "module" });
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const jpeg = await Promise.race([
-    heicTo({ blob: file, type: "image/jpeg", quality: 0.9 }),
-    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("heic conversion timed out")), HEIC_TIMEOUT_MS); }),
-  ]).finally(() => clearTimeout(timer));
-  const name = `${file.name.replace(/\.hei[cf]$/i, "")}.jpg`;
-  return new File([jpeg], name, { type: "image/jpeg", lastModified: file.lastModified });
+  let image: ImageData;
+  try {
+    image = await new Promise<ImageData>((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("heic conversion timed out")), HEIC_TIMEOUT_MS);
+      worker.onmessage = ({ data }: MessageEvent<{ image?: ImageData; error?: string }>) => {
+        if (data.image) resolve(data.image);
+        else reject(new Error(data.error || "heic conversion failed"));
+      };
+      worker.onerror = () => reject(new Error("heic conversion failed"));
+      worker.onmessageerror = () => reject(new Error("heic conversion failed"));
+      worker.postMessage(buffer, [buffer]);
+    });
+  } finally {
+    clearTimeout(timer);
+    worker.terminate();
+  }
+  const canvas = document.createElement("canvas");
+  try {
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("canvas unavailable");
+    context.putImageData(image, 0, 0);
+    const jpeg = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (blob) => blob ? resolve(blob) : reject(new Error("JPEG conversion failed")), "image/jpeg", 0.9,
+    ));
+    const name = `${file.name.replace(/\.hei[cf]$/i, "")}.jpg`;
+    return new File([jpeg], name, { type: "image/jpeg", lastModified: file.lastModified });
+  } finally {
+    canvas.width = 1;
+    canvas.height = 1;
+  }
 }
 
 /** The file to upload for one that was chosen: a HEIC or HEIF photo as a JPEG, anything else as it is. */

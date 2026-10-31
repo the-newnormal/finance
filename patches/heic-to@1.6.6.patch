@@ -1,0 +1,24 @@
+diff --git a/package.json b/package.json
+index 43d7482dd73a91df301a2d5c17ce71d8b4fb82de..bca35344309bd611bdeb13cba8e6a72a354b3649 100644
+--- a/package.json
++++ b/package.json
+@@ -18,7 +18,8 @@
+       "types": "./dist/next/heic-to.d.ts",
+       "import": "./dist/next/heic-to.js",
+       "require": "./dist/next/heic-to.js"
+-    }
++    },
++    "./libheif": "./src/lib/libheif.js"
+   },
+   "scripts": {
+     "build": "node esbuild.mjs",
+@@ -46,5 +47,9 @@
+   "devDependencies": {
+     "esbuild": "^0.25.4",
+     "http-server": "^14.1.1"
++  },
++  "browser": {
++    "fs": false,
++    "path": false
+   }
+ }
