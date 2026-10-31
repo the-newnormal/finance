@@ -1,4 +1,6 @@
 allowBuilds:
   sharp: false
-  unrs-resolver: false
   supabase: true
+  unrs-resolver: false
+patchedDependencies:
+  heic-to@1.6.6: patches/heic-to@1.6.6.patch
