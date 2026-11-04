@@ -53,6 +53,8 @@ export async function sendEmail(to: string, email: Email): Promise<SendResult> {
       html,
       text,
     });
+    // A code, never the address or the message (CLAUDE.md): enough to see in the logs that it went.
+    console.info("email sent", { code: "ok" });
     return { sent: true };
   } catch (e) {
     const code = (e as { code?: string })?.code ?? "unknown";

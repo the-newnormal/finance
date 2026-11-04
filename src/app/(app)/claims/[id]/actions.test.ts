@@ -102,13 +102,6 @@ describe("decideClaim", () => {
     expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" }, details: [["Amount", "$25.00"], ["Budget", "Iftar"]] });
   });
 
-  it("doesn't keep the reviewer waiting on the read behind a rejection's email", async () => {
-    returns({ data: { ...outcome, status: "rejected" } });
-    claimRow.mockReturnValue(new Promise(() => {})); // a read that never comes back
-    expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
-    scheduled.splice(0);
-  });
-
   it("gives up on that read after 5 seconds, so the email still goes out", async () => {
     vi.useFakeTimers();
     // AbortSignal.timeout runs on a timer fake timers can't reach; this one aborts on setTimeout,
@@ -125,10 +118,12 @@ describe("decideClaim", () => {
     }));
     returns({ data: { ...outcome, status: "rejected" } });
     try {
-      expect(await decideClaim(ID, false, "Blurry receipt")).toEqual({ ok: true });
+      // The read now happens before the answer, so the reviewer waits for it, but at most 5 seconds.
+      const decided = decideClaim(ID, false, "Blurry receipt");
       await vi.advanceTimersByTimeAsync(4_999);
       expect(sendEmail).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
+      expect(await decided).toEqual({ ok: true });
       await settled();
       expect(timeout).toHaveBeenCalledWith(5_000);
       expect(sent()).toMatchObject({ callout: { text: "Blurry receipt" }, details: [["Amount", "$25.00"], ["Budget", "Iftar"]] });
