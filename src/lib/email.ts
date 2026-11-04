@@ -32,7 +32,10 @@ function getTransporter() {
   return transporter;
 }
 
-export async function sendEmail(to: string, email: Email) {
+/** What happened to one email: sent to the mail server, or why not (a code, never the message). */
+export type SendResult = { sent: true } | { sent: false; code: string };
+
+export async function sendEmail(to: string, email: Email): Promise<SendResult> {
   const { html, text } = renderEmail(email, process.env.NEXT_PUBLIC_SITE_URL || undefined);
 
   const t = getTransporter();
@@ -40,7 +43,7 @@ export async function sendEmail(to: string, email: Email) {
     // Logs carry codes only (CLAUDE.md), so the email itself is never printed. To see them locally,
     // set SMTP_* to a real mailbox.
     console.error("email not sent", { code: "smtp_not_configured" });
-    return;
+    return { sent: false, code: "smtp_not_configured" };
   }
   try {
     await t.sendMail({
@@ -50,7 +53,10 @@ export async function sendEmail(to: string, email: Email) {
       html,
       text,
     });
+    return { sent: true };
   } catch (e) {
-    console.error("email failed", { code: (e as { code?: string })?.code ?? "unknown" });
+    const code = (e as { code?: string })?.code ?? "unknown";
+    console.error("email failed", { code });
+    return { sent: false, code };
   }
 }
