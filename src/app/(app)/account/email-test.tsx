@@ -18,13 +18,13 @@ export function EmailTest() {
         })}>
         {pending ? "Sending…" : "Send me a test email"}
       </Button>
-      {result?.sent && (
+      {!pending && result?.sent && (
         <Alert tone="success">
           Sent to {result.to}. If it doesn&apos;t arrive within a few minutes, check Spam, and the sending account&apos;s Sent folder.
         </Alert>
       )}
-      {result && !result.sent && <Alert>Not sent ({result.code}). {result.hint}</Alert>}
-      {failed && <Alert>The test couldn&apos;t run. Check your connection and try again.</Alert>}
+      {!pending && result && !result.sent && <Alert>Not sent ({result.code}). {result.hint}</Alert>}
+      {!pending && failed && <Alert>The test couldn&apos;t run. Check your connection and try again.</Alert>}
     </div>
   );
 }
