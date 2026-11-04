@@ -113,5 +113,18 @@ from unnest(array['private.members_before_update()', 'private.budgets_before_upd
                   'private.bank_entries_sync_grant()', 'private.categories_before_write()',
                   'private.claims_items_before_insert()']) f;
 
+-- Notifications (0013): the service role reads exactly what src/lib/notify.ts needs, and writes nothing.
+select ok(has_column_privilege('service_role', 'public.members', c, 'select'), format('service_role: reads members.%s', c))
+from unnest(array['id', 'email', 'name', 'role', 'active']) c;
+select ok(has_column_privilege('service_role', 'public.claims', c, 'select'), format('service_role: reads claims.%s', c))
+from unnest(array['id', 'status', 'division_id', 'claimant_id', 'claimant_name', 'amount_cents', 'kind', 'description',
+                  'vendor_name', 'budget_id']) c;
+select ok(has_column_privilege('service_role', 'public.division_leads', 'member_id', 'select'), 'service_role: reads division_leads');
+select ok(has_column_privilege('service_role', 'public.budgets', 'name', 'select'), 'service_role: reads budget names');
+select ok(not has_column_privilege('service_role', 'public.claims', 'payout_enc', 'select'), 'service_role: never reads payout_enc');
+select ok(not has_table_privilege('service_role', t, p), format('service_role: no %s on %s', p, t))
+from unnest(array['public.members', 'public.claims', 'public.division_leads', 'public.budgets']) t,
+     unnest(array['insert', 'update', 'delete']) p;
+
 select * from finish();
 rollback;
