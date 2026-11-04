@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { z } from "zod";
 import { claimDetails } from "@/lib/email-template";
+import { deliver } from "@/lib/deliver";
 import { emailClaimant, emailReviewers } from "@/lib/notify";
 import { formatSGD } from "@/lib/money";
 import { requireMember } from "@/lib/session";
@@ -53,12 +53,12 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
   const hi = `Hi ${data.claimant_name.split(" ")[0]},`;
   const amount = formatSGD(data.amount_cents);
   const link = { href: `/claims/${id}`, label: "View claim" };
-  // The decision is saved; the email goes out after the response, so a slow mail server never
-  // holds up (or seems to fail) the approval.
+  // The decision is saved; the email goes out before the answer (deliver: at most 15 seconds,
+  // and a failure never fails the approval).
   if (data.status === "approved") {
     const claim = await kindOf(supabase, id);
     if (claim?.kind === "invoice") {
-      after(() => emailClaimant(data.claimant_id, {
+      await deliver(() => emailClaimant(data.claimant_id, {
         subject: `Your invoice for ${amount} has been approved`,
         badge: { label: "Approved", tone: "success" },
         heading: "Your invoice has been approved",
@@ -67,7 +67,7 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
         link: { ...link, label: "View invoice" },
       }));
     } else if (claim) {
-      after(() => emailClaimant(data.claimant_id, {
+      await deliver(() => emailClaimant(data.claimant_id, {
         subject: `Your claim for ${amount} has been approved`,
         badge: { label: "Approved", tone: "success" },
         heading: "Your claim has been approved",
@@ -77,25 +77,24 @@ export async function decideClaim(id: string, approve: boolean, reason?: string)
       }));
     }
   } else if (data.status === "rejected") {
-    // The reason matters more than the wording, so this one is sent even if the claim can't be read.
-    // Reading it waits for after the response too, so the reviewer isn't kept waiting for it.
-    after(async () => {
-      const claim = await kindOf(supabase, id);
-      const thing = claim?.kind === "invoice" ? "invoice" : "claim";
-      await emailClaimant(data.claimant_id, {
-        subject: `Your ${thing} for ${amount} needs attention`,
-        badge: { label: "Not approved", tone: "warning" },
-        heading: `Your ${thing} wasn't approved`,
-        paragraphs: [hi, "It couldn't be approved as it is, for the reason below."],
-        details: claimDetails({ description: claim?.description, vendor: claim?.kind === "invoice" ? claim.vendor_name : null, amount, budget: data.budget_name }),
-        callout: { label: "Reason", text: reason?.trim() ?? "" },
-        closing: `You're welcome to submit a new ${thing} with the corrections.`,
-        link: { ...link, label: `View ${thing}` },
-      });
-    });
+    // Read the claim now, while the reviewer's session is still this request's: after the response
+    // it may no longer be readable as them, and the email was then never sent. The reason matters
+    // more than the wording, so the email goes even if this read fails.
+    const claim = await kindOf(supabase, id);
+    const thing = claim?.kind === "invoice" ? "invoice" : "claim";
+    await deliver(() => emailClaimant(data.claimant_id, {
+      subject: `Your ${thing} for ${amount} needs attention`,
+      badge: { label: "Not approved", tone: "warning" },
+      heading: `Your ${thing} wasn't approved`,
+      paragraphs: [hi, "It couldn't be approved as it is, for the reason below."],
+      details: claimDetails({ description: claim?.description, vendor: claim?.kind === "invoice" ? claim.vendor_name : null, amount, budget: data.budget_name }),
+      callout: { label: "Reason", text: reason?.trim() ?? "" },
+      closing: `You're welcome to submit a new ${thing} with the corrections.`,
+      link: { ...link, label: `View ${thing}` },
+    }));
   } else if (data.status === "pending_finance") {
     // Reviewed: tell Finance it's waiting for final approval, except whoever just reviewed it.
-    after(() => emailReviewers(id, "pending_finance", me.id));
+    await deliver(() => emailReviewers(id, "pending_finance", me.id));
   }
 
   revalidatePath(`/claims/${id}`);
@@ -119,7 +118,7 @@ export async function markPaid(id: string, reference: string, accountId: string)
   const amount = formatSGD(data.amount_cents);
   const claim = await kindOf(supabase, id);
   if (claim?.kind === "invoice") {
-    after(() => emailClaimant(data.claimant_id, {
+    await deliver(() => emailClaimant(data.claimant_id, {
       subject: `Your invoice for ${amount} has been settled`,
       badge: { label: "Settled", tone: "paid" },
       heading: `We've settled ${claim.vendor_name}'s invoice`,
@@ -128,7 +127,7 @@ export async function markPaid(id: string, reference: string, accountId: string)
       link: { href: `/claims/${id}`, label: "View invoice" },
     }));
   } else if (claim) {
-    after(() => emailClaimant(data.claimant_id, {
+    await deliver(() => emailClaimant(data.claimant_id, {
       subject: `You've been reimbursed ${amount}`,
       badge: { label: "Reimbursed", tone: "paid" },
       heading: `You've been reimbursed ${amount}`,

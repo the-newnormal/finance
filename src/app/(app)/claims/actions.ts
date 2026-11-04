@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { z } from "zod";
 import { checkClaimDetails } from "@/lib/claim-details";
 import { assertPayoutKey, decryptPayout, encryptPayout, maskPayout, type PayoutDetails } from "@/lib/crypto";
+import { deliver } from "@/lib/deliver";
 import { emailReviewers } from "@/lib/notify";
 import { normaliseSgMobile, normaliseUen } from "@/lib/paynow";
 import { receiptCheckEnabled } from "@/lib/receipt-check";
@@ -157,9 +157,9 @@ export async function submitClaim(input: ClaimInput): Promise<SubmitResult> {
     }
   }
 
-  // Tell whoever reviews it that it's waiting, after the response. Only for a claim this attempt
+  // Tell whoever reviews it that it's waiting (deliver: before the answer). Only for a claim this attempt
   // made: on a retry, the first attempt already did.
-  if (!error) after(() => emailReviewers(claimId!, data.status));
+  if (!error) await deliver(() => emailReviewers(claimId!, data.status));
 
   revalidatePath("/claims");
   return { ok: true, id: claimId!, payoutSaved };
